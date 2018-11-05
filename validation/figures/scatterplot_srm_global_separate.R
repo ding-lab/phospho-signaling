@@ -66,35 +66,42 @@ trans_tab <- tab
 colnames(trans_tab)[5] <- "peptide"
 common_columns <- intersect(colnames(trans_tab), colnames(cis_tab))
 tab <- rbind(trans_tab[, common_columns], cis_tab[, common_columns])
+tab$SELF <- ifelse(as.vector(tab$KINASE) == as.vector(tab$SUBSTRATE), "cis", "trans")
 resultDnow <- makeOutDir(resultD = resultD)
 subdir <- paste0(resultDnow, "trans", "/")
 dir.create(subdir)
-for (cancer in cancers_sort) {
-# for (cancer in c("BRCA")) {
+# for (cancer in cancers_sort) {
+for (cancer in c("BRCA")) {
+  ## input cross tab for SRM values
   pp_cancer <- pp_tab[, c("Peptide.Sequence", "Protein.Name", colnames(pp_tab)[grepl(pattern = substr(cancer, start = 1, stop = 2), x = colnames(pp_tab))])]
-  tab_cancer <- tab[(as.vector(tab$KINASE) != as.vector(tab$SUBSTRATE)),]
+  up_cancer <- up_tab[, c("Peptide.Sequence", "Protein.Name", colnames(pp_tab)[grepl(pattern = substr(cancer, start = 1, stop = 2), x = colnames(up_tab))])]
+  
+  tab_cancer <- tab[tab$SELF == "trans",]
   
   ## input global data
   phog <- loadPhosphoproteinNormalizedTumor(cancer = cancer)
   pho <- loadPhosphositeNormalizedTumor(cancer = cancer)
   pho <- cbind(formatPhosphosite(phosphosite_vector = pho$Phosphosite, pho$Gene), pho[,!(colnames(pho) %in% c("Gene", "Phosphosite"))])
+  pro <- loadProteinNormalizedTumor(cancer = cancer)
   
   for (peptide in unique(pp_cancer$Peptide.Sequence)) {
     pp_cancer_pep <- pp_cancer[pp_cancer$Peptide.Sequence == toupper(peptide),]
+    pp_cancer_pep.m <- melt(pp_cancer_pep, id.vars = c("Peptide.Sequence", "Protein.Name"))
+    pp_cancer_pep.m$Participant_ID <- str_split_fixed(string = pp_cancer_pep.m$variable, pattern = "X", 2)[,2]
+    
     tab_cancer_pep <- tab_cancer[grepl(pattern = peptide, x = tab_cancer$peptide, ignore.case = T),]
     tab_pep <- tab[grepl(pattern = peptide, x = tab$peptide, ignore.case = T),]
     
-    pp_cancer_pep.m <- melt(pp_cancer_pep, id.vars = c("Peptide.Sequence", "Protein.Name"))
-    pp_cancer_pep.m$Participant_ID <- str_split_fixed(string = pp_cancer_pep.m$variable, pattern = "X", 2)[,2]
-
-    sub <- unique(tab_cancer_pep$SUBSTRATE)
-    rsd <- unique(tab_cancer_pep$SUB_MOD_RSD)
+    sub <- unique(tab_pep$SUBSTRATE)
+    rsd <- unique(tab_pep$SUB_MOD_RSD)
     pho_sub <- pho[pho$SUBSTRATE == sub & pho$SUB_MOD_RSD == rsd,]
+
     if (nrow(pho_sub) > 0 ){
       pho_sub.m <- melt(pho_sub, id.vars = c("SUBSTRATE", "transcript", "SUB_MOD_RSD"))
       colnames(pho_sub.m) <- c("substrate", "transcript", "SUB_MOD_RSD", "sample", "pho_sub")
       kinases <- unique(tab_pep$KINASE)
       kinases <- kinases[kinases!=sub]
+      
       for (kinase in kinases) {
         subdir1 <- paste0(subdir, kinase, "_", sub, "_", rsd, "/")
         dir.create(subdir1)
@@ -128,21 +135,70 @@ for (cancer in cancers_sort) {
         df_cor <- merge(df_cor, df[df$technology == "SRM", c("phog_kin", "pho_sub")], all.x = T)
         colnames(df_cor)[ncol(df_cor)] <- "pho_sub.srm"
         
-        p = ggplot(df)
-        p = p + geom_point(aes(x=phog_kin, y=pho_sub), alpha=0.9, stroke = 0)
-        p <- p + geom_smooth(formula = y ~ x, mapping = aes(x = phog_kin, y = pho_sub), method = lm, alpha = 0.4)
-        p <- p + facet_grid(technology~., scales = "free_y", space = "fixed")
-        p = p + labs(x = paste0("global phosphorylaion abundance for ", kinase),
-                     y=paste0("SRM/global phosphorylation abundance for ", sub, " ", rsd))
-        p = p + theme(axis.title = element_text(size=10),
-                      axis.text.x = element_text(colour="black", size=6,angle=90, vjust=0.5),
-                      axis.text.y = element_text(colour="black", size=10))#element_text(colour="black", size=14))
-        p = p + theme(title = element_text(size = 8))
-        p <- p + theme_bw()
-        p
-        fn = paste0(subdir2, cancer, "_", kinase, "_", sub, "_", rsd ,"_global~SRM.pdf")
-        ggsave(file=fn, height=6, width=5, useDingbats=FALSE)
         
+        ## limit to SRM only
+        # p = ggplot(df)
+        # p = p + geom_point(aes(x=phog_kin, y=pho_sub), alpha=0.9, stroke = 0)
+        # p <- p + geom_smooth(formula = y ~ x, mapping = aes(x = phog_kin, y = pho_sub), method = lm, alpha = 0.4)
+        # p <- p + facet_grid(technology~., scales = "free_y", space = "fixed")
+        # p = p + labs(x = paste0("global phosphorylaion abundance for ", kinase),
+        #              y=paste0("SRM/global phosphorylation abundance for ", sub, " ", rsd))
+        # p = p + theme(axis.title = element_text(size=10),
+        #               axis.text.x = element_text(colour="black", size=6,angle=90, vjust=0.5),
+        #               axis.text.y = element_text(colour="black", size=10))#element_text(colour="black", size=14))
+        # p = p + theme(title = element_text(size = 8))
+        # p <- p + theme_bw() + theme_nogrid()
+        # p
+        # fn = paste0(subdir2, cancer, "_", kinase, "_", sub, "_", rsd ,"_global~SRM.pdf")
+        # ggsave(file=fn, height=6, width=5, useDingbats=FALSE)
+        
+        for (upeptide in up_cancer$Peptide.Sequence[up_cancer$Protein.Name == pp_cancer_pep$Protein.Name]) {
+          subdir3 <- paste0(subdir2, "unmodified-peptide_", upeptide, "/")
+          dir.create(subdir3)
+
+          up_cancer_pep <- up_cancer[up_cancer$Peptide.Sequence == upeptide,]
+          up_cancer_pep.m <- melt(up_cancer_pep, id.vars = c("Peptide.Sequence", "Protein.Name"))
+          up_cancer_pep.m$Participant_ID <- str_split_fixed(string = up_cancer_pep.m$variable, pattern = "X", 2)[,2]
+          
+          colnames(df2)[colnames(df2) == "pho_sub"] <- "pho_sub.srm"
+          
+          df3 <- merge(df2, up_cancer_pep.m[,c("Participant_ID", "value")], by = c("Participant_ID"), all = T)
+          df3$value[df3$value == "#N/A"] <- NA
+          df3$value <- as.numeric(as.vector(df3$value))
+          colnames(df3)[colnames(df3) == "value"] <- c("pro_sub.srm")
+          df3$srm_samples <- !is.na(df3$pho_sub.srm)
+          
+          df <- df3
+          df <- df[!is.na(df$pho_sub.srm) & !is.na(df$phog_kin) & !is.na(df$pro_sub.srm),]
+          if (nrow(df) > 2) {
+            sink(paste0(subdir3, cancer, "_", kinase, "_", upeptide, "_", sub, "_", rsd, "_", peptide ,"_srm4lm.txt"), append=FALSE, split=FALSE)
+            fit1 <- lm(pho_sub.srm ~ pro_sub.srm + phog_kin,data = df)
+            print(paste0(kinase))
+            print(nrow(df))
+            print(coef(summary(fit1))[3,4])
+            print(fit1$coefficients[3])
+            sink()
+            closeAllConnections()
+            
+            
+            p = ggplot(df)
+            p = p + geom_point(aes(x=phog_kin, y=pho_sub.srm), alpha=0.9, stroke = 0)
+            p <- p + geom_smooth(formula = y ~ x, mapping = aes(x = phog_kin, y = pho_sub.srm), method = lm, alpha = 0.4)
+            p = p + labs(x = paste0("global phosphorylaion abundance for ", kinase),
+                         y=paste0("SRM/global phosphorylation abundance for ", sub, " ", rsd))
+            p = p + theme(axis.title = element_text(size=10),
+                          axis.text.x = element_text(colour="black", size=6,angle=90, vjust=0.5),
+                          axis.text.y = element_text(colour="black", size=10))#element_text(colour="black", size=14))
+            p = p + theme(title = element_text(size = 8))
+            p <- p + theme_bw() + theme_nogrid()
+            p <- p + expand_limits(x = 0, y = 0)
+            fn = paste0(subdir3, cancer, "_", kinase, "_", sub, "_", rsd ,"_SRM4retro.pdf")
+            pdf(fn,  height=3, width=4.5, useDingbats = F)
+            print(p)
+            dev.off()
+            
+          }
+        }
       }
     }
   }
@@ -153,17 +209,18 @@ for (cancer in cancers_sort) {
 colnames(trans_tab)[5] <- "peptide"
 common_columns <- intersect(colnames(trans_tab), colnames(cis_tab))
 tab <- rbind(trans_tab[, common_columns], cis_tab[, common_columns])
+tab$SELF <- ifelse(as.vector(tab$KINASE) == as.vector(tab$SUBSTRATE), "cis", "trans")
 resultDnow <- makeOutDir(resultD = resultD)
 subdir <- paste0(resultDnow, "cis", "/")
 dir.create(subdir)
-for (cancer in c("CO", "OV", "BRCA")) {
+for (cancer in c("BRCA")) {
 # for (cancer in c("OV")) {
 
   ## input cross tab for SRM values
   pp_cancer <- pp_tab[, c("Peptide.Sequence", "Protein.Name", colnames(pp_tab)[grepl(pattern = substr(cancer, start = 1, stop = 2), x = colnames(pp_tab))])]
   up_cancer <- up_tab[, c("Peptide.Sequence", "Protein.Name", colnames(pp_tab)[grepl(pattern = substr(cancer, start = 1, stop = 2), x = colnames(up_tab))])]
   
-  tab_cancer <- tab[tab$cancer_type ==  cancer,]
+  tab_cancer <- tab[tab$cancer_type ==  cancer & tab$SELF == "cis",]
   
   ## input global data
   phog <- loadPhosphoproteinNormalizedTumor(cancer = cancer)
@@ -171,7 +228,7 @@ for (cancer in c("CO", "OV", "BRCA")) {
   pho <- cbind(formatPhosphosite(phosphosite_vector = pho$Phosphosite, pho$Gene), pho[,!(colnames(pho) %in% c("Gene", "Phosphosite"))])
   pro <- loadProteinNormalizedTumor(cancer = cancer)
   
-  for (peptide in unique(pp_cancer$Peptide.Sequence)[4]) {
+  for (peptide in unique(pp_cancer$Peptide.Sequence)) {
     pp_cancer_pep <- pp_cancer[pp_cancer$Peptide.Sequence == toupper(peptide),]
     pp_cancer_pep.m <- melt(pp_cancer_pep, id.vars = c("Peptide.Sequence", "Protein.Name"))
     pp_cancer_pep.m$Participant_ID <- str_split_fixed(string = pp_cancer_pep.m$variable, pattern = "X", 2)[,2]
@@ -231,27 +288,54 @@ for (cancer in c("CO", "OV", "BRCA")) {
           df$x <- remove_outliers(x = df$pro_kin.global, out_thres = 3, na.rm = T)
           df$x[!is.na(df$pro_kin.srm)] <- df$pro_kin.global[!is.na(df$pro_kin.srm)]
           
-          fn = paste0(subdir3, cancer, "_", kinase, "_", upeptide, "_", sub, "_", rsd, "_", peptide ,"_global.pdf")
-          p <- ggplot()
-          p <- p + geom_point(data = df, mapping = aes(x = x, y = y, color = srm_samples), alpha = 0.8)
-          p <- p + scale_color_manual(values = c("TRUE" = set1[1], "FALSE" = "black"))
-          p <- p + xlab(paste0(kinase, " protein abundance(global)")) + ylab(paste0(sub, " ", rsd, " abundance (global)"))
-          p <- p + theme_bw()
-          pdf(fn,  height=3, width=4.5, useDingbats = F)
-          print(p)
-          dev.off()
+          # fn = paste0(subdir3, cancer, "_", kinase, "_", upeptide, "_", sub, "_", rsd, "_", peptide ,"_global.pdf")
+          # p <- ggplot()
+          # p <- p + geom_point(data = df, mapping = aes(x = x, y = y, color = srm_samples), alpha = 0.8)
+          # p <- p + scale_color_manual(values = c("TRUE" = set1[1], "FALSE" = "black"))
+          # p <- p + xlab(paste0(kinase, " protein abundance(global)")) + ylab(paste0(sub, " ", rsd, " abundance (global)"))
+          # p <- p + theme_bw()
+          # pdf(fn,  height=3, width=4.5, useDingbats = F)
+          # print(p)
+          # dev.off()
+          # 
+          # df <- df3
+          # fn = paste0(subdir3, cancer, "_", kinase, "_", upeptide, "_", sub, "_", rsd, "_", peptide ,"_srm.pdf")
+          # p <- ggplot()
+          # p <- p + geom_point(data = df, mapping = aes(x = pro_kin.srm, y = pho_sub.srm), alpha = 0.8)
+          # p <- p + scale_color_manual(values = c("TRUE" = set1[1], "FALSE" = "black"))
+          # p <- p + xlab(paste0(kinase, " protein abundance(SRM)")) + ylab(paste0(sub, " ", rsd, " abundance (SRM)"))
+          # p <- p + theme_bw()
+          # pdf(fn,  height=3, width=4.5, useDingbats = F)
+          # print(p)
+          # dev.off()
           
+          # plot SRM correlation -------------------------------------------------
+
           df <- df3
-          fn = paste0(subdir3, cancer, "_", kinase, "_", upeptide, "_", sub, "_", rsd, "_", peptide ,"_srm.pdf")
-          p <- ggplot()
-          p <- p + geom_point(data = df, mapping = aes(x = pro_kin.srm, y = pho_sub.srm, color = srm_samples), alpha = 0.8)
-          p <- p + scale_color_manual(values = c("TRUE" = set1[1], "FALSE" = "black"))
-          p <- p + xlab(paste0(kinase, " protein abundance(SRM)")) + ylab(paste0(sub, " ", rsd, " abundance (SRM)"))
-          p <- p + theme_bw()
-          pdf(fn,  height=3, width=4.5, useDingbats = F)
-          print(p)
-          dev.off()
+          df <- df[!is.na(df$pho_sub.srm) & !is.na(df$pro_kin.srm),]
           
+          ## print regression statisitcs
+          if (nrow(df) > 1) {
+            sink(paste0(subdir3, cancer, "_", kinase, "_", upeptide, "_", sub, "_", rsd, "_", peptide ,"_srm4lm.txt"), append=FALSE, split=FALSE)
+            fit1 <- lm(pho_sub.srm ~ pro_kin.srm,data = df)
+            print(paste0(kinase))
+            print(nrow(df))
+            print(coef(summary(fit1))[2,4])
+            print(fit1$coefficients[2])
+            sink()
+            closeAllConnections()
+            
+            fn = paste0(subdir3, cancer, "_", kinase, "_", upeptide, "_", sub, "_", rsd, "_", peptide ,"_srm4retro.pdf")
+            p <- ggplot()
+            p <- p + geom_point(data = df, mapping = aes(x = pro_kin.srm, y = pho_sub.srm), alpha = 0.8)
+            p <- p + geom_smooth(data = df, formula = y ~ x, mapping = aes(x = pro_kin.srm, y = pho_sub.srm), method = lm, alpha = 0.4)
+            p <- p + xlab(paste0(kinase, " protein abundance(SRM)")) + ylab(paste0(sub, " ", rsd, " abundance (SRM)"))
+            p <- p + theme_bw()
+            p = p + expand_limits(x=0,y=0) + theme_nogrid()
+            pdf(fn,  height=3, width=4.5, useDingbats = F)
+            print(p)
+            dev.off()
+          }
         }
       }
     }

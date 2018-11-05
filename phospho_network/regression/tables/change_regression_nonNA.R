@@ -6,15 +6,48 @@ source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_
 
 
 # set variables -----------------------------------------------------------
-cptac_phase2process <- "cptac2p_3can"
-cancers2process <- cancers_sort
+# cptac_phase2process <- "cptac2p_3can"
+# cancers2process <- cancers_sort
+cptac_phase2process <- "cptac3"
+cancers2process <- "UCEC"
+
+# split table for smaller supplementary tables ----------------------------
+for (enzyme_type in c("kinase", "phosphatase")) {
+  # sup_cans_tab_en <- fread(input = paste0("./cptac2p/analysis_results/phospho_network/regression/tables/regression_manualAdded_protein_level/", 
+  #                                         enzyme_type, "_substrate_regression_", cptac_phase2process, "_tumor.txt"), data.table = F)
+  sup_cans_tab_en <- fread(input = paste0("./cptac2p/analysis_results/phospho_network/regression/tables/regression_omnipath&newworkin&depod&signor&manual_protein_level/", 
+                                          enzyme_type, "_substrate_regression_", cptac_phase2process, "_tumor.txt"), data.table = F)
+  
+  for (cancer in cancers2process) {
+    for (self in c("trans", "cis")) {
+      tab2w <- sup_cans_tab_en[sup_cans_tab_en$Cancer == cancer & sup_cans_tab_en$SELF == self,]
+      tab2w$self <- NULL
+      tab2w$pair <- NULL
+      
+      write.table(x = tab2w, file = paste0(makeOutDir(resultD = resultD), enzyme_type, "_substrate_regression_", cancer, "_", self , "_tumor.txt"), quote = F, row.names = F, sep = "\t")
+      write.table(x = tab2w, file = paste0(makeOutDir(resultD = resultD), enzyme_type, "_substrate_regression_", cancer, "_", self , "_tumor.csv"), quote = F, row.names = F, sep = ",")
+      
+      if (self == "trans") {
+        tab2w <- tab2w[tab2w$FDR_pho_kin < 0.1,]
+        write.table(x = tab2w, file = paste0(makeOutDir(resultD = resultD), enzyme_type, "_substrate_regression_", cancer, "_", self , "_FDR0.1", "_tumor.csv"), quote = F, row.names = F, sep = ",")
+        
+        tab2w <- tab2w[tab2w$FDR_pho_kin < 0.05,]
+        write.table(x = tab2w, file = paste0(makeOutDir(resultD = resultD), enzyme_type, "_substrate_regression_", cancer, "_", self , "_FDR0.05", "_tumor.csv"), quote = F, row.names = F, sep = ",")
+    
+      }
+    }
+  }
+}
+
+
 # inputs ------------------------------------------------------------------
 ## input enzyme-substrate pairs examined
 regulated_ratio_across_thres <- NULL
 for (reg_nonNA in seq(from = 5, to = 30, by = 5)) {
-  for (enzyme_type in c("phosphatase")) {
-    enzyme_type <- "kinase"
-    sup_cans_tab_en <- fread(input = paste0("./cptac2p/analysis_results/phospho_network/regression/tables/regression_omnipath&newworkin&depod&signor_protein_level/", 
+  for (enzyme_type in c("kinase", "phosphatase")) {
+    # sup_cans_tab_en <- fread(input = paste0("./cptac2p/analysis_results/phospho_network/regression/tables/regression_manualAdded_protein_level/", 
+    #                                         enzyme_type, "_substrate_regression_", cptac_phase2process, "_tumor.txt"), data.table = F)
+    sup_cans_tab_en <- fread(input = paste0("./cptac2p/analysis_results/phospho_network/regression/tables/regression_omnipath&newworkin&depod&signor&manual_protein_level/", 
                                             enzyme_type, "_substrate_regression_", cptac_phase2process, "_tumor.txt"), data.table = F)
     sup_cans_tab_en <- sup_cans_tab_en[sup_cans_tab_en$Size >= reg_nonNA,]
     name = c("pro_kin","pro_sub","pho_kin")

@@ -3,7 +3,7 @@
 
 
 # source ------------------------------------------------------------------
-source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+source("Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R")
 
 
 # Set variables -----------------------------------------------------------
@@ -18,12 +18,15 @@ kinases <- unique(ptms_site_pairs_sup$GENE[ptms_site_pairs_sup$enzyme_type == "k
 phosphatases <- unique(ptms_site_pairs_sup$GENE[ptms_site_pairs_sup$enzyme_type == "phosphatase"])
 substrates <- unique(ptms_site_pairs_sup$SUB_GENE)
 
+## input complex table
+complex_pair_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/compile_enzyme_substrate/tables/parse_corum_signor_reactome/sup_complex_pair_uniq.txt", data.table = F)
+
 # get the gene list covering all the enzymes and substrates ---------------
-genes4mat <- unique(c(kinases, phosphatases, substrates))
+genes4mat <- unique(c(kinases, phosphatases, substrates, as.vector(complex_pair_tab$geneA), as.vector(complex_pair_tab$geneB)))
 length(genes4mat)
 
 # loop by cancer ----------------------------------------------------------
-for (cancer in cancers_sort) {
+for (cancer in c(cancers_sort, "UCEC")) {
   maf <- loadMaf(cancer = cancer, maf_files = maf_files)
   nrow(maf)
   maf <- maf[maf$Hugo_Symbol %in% genes4mat,]

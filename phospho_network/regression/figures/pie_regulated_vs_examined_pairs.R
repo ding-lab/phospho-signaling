@@ -8,9 +8,10 @@ if (!require("ggsunburst")) install.packages("http://genome.crg.es/~didac/ggsunb
 library(ggsunburst)
 
 # set variables -----------------------------------------------------------
-reg_nonNA2test <- c(25)
+reg_nonNA2test <- c(20, 25)
 top_kinase2show <- 10
 top_substrate2show <- 2
+fdr_thres <- c(0.2, 0.05); names(fdr_thres) <- c("phosphatase", "kinase")
 # inputs ------------------------------------------------------------------
 
 # pie chart of top regulating enzymes within all regulated pairs-------------------------------------
@@ -108,17 +109,18 @@ for (reg_nonNA in reg_nonNA2test) {
 
 # pie chart of each top regulating enzyme -------------------------------------
 for (reg_nonNA in reg_nonNA2test) {
-  for (enzyme_type in c("kinase")) {
+  for (enzyme_type in c("phosphatase")) {
     sup_cans_tab_en <- fread(input = paste0(ppnD, "regression/tables/", "change_regression_nonNA/", 
                                             enzyme_type, "_substrate_regression_cptac2p_3can_tumor",
                                             "_reg_nonNA", reg_nonNA, ".txt"), data.table = F)
-    
+    sup_cans_tab_en <- markSigKS(regression = sup_cans_tab_en, sig_thres = fdr_thres[enzyme_type], enzyme_type = enzyme_type)
+    sup_cans_tab_en$regulated <- (sup_cans_tab_en$fdr_sig & sup_cans_tab_en$coef_sig)
     sup_cans_tab_en_reg <- sup_cans_tab_en[sup_cans_tab_en$regulated,]
     for (cancer in unique(sup_cans_tab_en_reg$Cancer)) {
       # cancer <- "BRCA"
       driver_can <- loadGeneList(gene_type = "driver", cancer = cancer, is.soft.limit = "")
       driver_pancan <- loadGeneList(gene_type = "driver", cancer = "PANCAN", is.soft.limit = "")
-      for (self in c("cis")) {
+      for (self in c("trans")) {
         # self <- "trans"
         tab_can <- sup_cans_tab_en_reg[sup_cans_tab_en_reg$Cancer == cancer & sup_cans_tab_en_reg$SELF == self,]
         if (nrow(tab_can) > 0) {
@@ -207,13 +209,13 @@ for (reg_nonNA in reg_nonNA2test) {
 
 # pie chart of pairs involving driver gene substrate -------------------------------------
 top_kinase2show <- 15
-
 for (reg_nonNA in reg_nonNA2test) {
-  for (enzyme_type in c("kinase")) {
+  for (enzyme_type in c("phosphatase")) {
     sup_cans_tab_en <- fread(input = paste0(ppnD, "regression/tables/", "change_regression_nonNA/", 
                                             enzyme_type, "_substrate_regression_cptac2p_3can_tumor",
                                             "_reg_nonNA", reg_nonNA, ".txt"), data.table = F)
-    
+    sup_cans_tab_en <- markSigKS(regression = sup_cans_tab_en, sig_thres = fdr_thres[enzyme_type], enzyme_type = enzyme_type)
+    sup_cans_tab_en$regulated <- (sup_cans_tab_en$fdr_sig & sup_cans_tab_en$coef_sig)
     sup_cans_tab_en_reg <- sup_cans_tab_en[sup_cans_tab_en$regulated,]
     for (cancer in unique(sup_cans_tab_en_reg$Cancer)) {
       # cancer <- "BRCA"
@@ -305,15 +307,14 @@ for (reg_nonNA in reg_nonNA2test) {
   }
 }
 
-
-
 # pie chart of pairs involving driver gene enzyme -------------------------------------
 for (reg_nonNA in reg_nonNA2test) {
   for (enzyme_type in c("kinase", "phosphatase")) {
     sup_cans_tab_en <- fread(input = paste0(ppnD, "regression/tables/", "change_regression_nonNA/", 
                                             enzyme_type, "_substrate_regression_cptac2p_3can_tumor",
                                             "_reg_nonNA", reg_nonNA, ".txt"), data.table = F)
-    
+    sup_cans_tab_en <- markSigKS(regression = sup_cans_tab_en, sig_thres = fdr_thres[enzyme_type], enzyme_type = enzyme_type)
+    sup_cans_tab_en$regulated <- (sup_cans_tab_en$fdr_sig & sup_cans_tab_en$coef_sig)
     sup_cans_tab_en_reg <- sup_cans_tab_en[sup_cans_tab_en$regulated,]
     for (cancer in unique(sup_cans_tab_en_reg$Cancer)) {
       # cancer <- "BRCA"
@@ -391,7 +392,7 @@ for (reg_nonNA in reg_nonNA2test) {
           ggsave(filename = paste0(makeOutDir(resultD = resultD), 
                                    cancer, "_driver_", enzyme_type, "_substrate_pairs_", self, "_regulated_reg_nonNA", reg_nonNA, 
                                    "_topenzyme", top_kinase2show, "_topsubstrate", top_substrate2show, ".pdf"), 
-                 width = 6, height = 6)
+                 width = 5, height = 6)
         }
         
       }

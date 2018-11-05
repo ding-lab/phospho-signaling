@@ -26,3 +26,11 @@ ptms_pairs2add <- data.frame(GENE = ptms_pairs2add$GENE, SUB_GENE = ptms_pairs2a
 ptms_pairs2add$pair_pro <- paste0(ptms_pairs2add$GENE, ":", ptms_pairs2add$SUB_GENE)
 ptms_site_pairs_sup <- rbind(ptms_pairs2add, ptms_site_pairs_sup)
 write.table(x = ptms_site_pairs_sup, file = paste0(makeOutDir(resultD = resultD), "Omnipath_NetworKin_DEPOD_SignorNotSiteMapped_manualAdded.csv"), quote = F, row.names = F, sep = ",")
+
+
+# Write table for pairs with SMGs as substrates ---------------------------
+smg_as_sub_tab <- ptms_site_pairs_sup[ptms_site_pairs_sup$SUB_GENE %in% unlist(SMGs),]
+smg_as_sub_tab <- smg_as_sub_tab[order(smg_as_sub_tab$SUB_GENE, smg_as_sub_tab$GENE),]
+write.table(x = smg_as_sub_tab, file = paste0(makeOutDir(resultD = resultD), "Omnipath_NetworKin_DEPOD_SignorNotSiteMapped_manualAdded_SMG_as_substrate.csv"), quote = F, row.names = F, sep = ",")
+
+unlist(SMGs)[!(unlist(SMGs) %in% smg_as_sub_tab$SUB_GENE)]

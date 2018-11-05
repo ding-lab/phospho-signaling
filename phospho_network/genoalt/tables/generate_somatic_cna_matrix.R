@@ -2,12 +2,14 @@
 ## generate a matrix of gene*sample for focal_data_by_genes.txt from GISTIC2.0
 
 # source ------------------------------------------------------------------
-source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+source("Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R")
 
 # Set variables -----------------------------------------------------------
 num_genoalt_thres <- 4
-amp_thres <- 0.1
-del_thres <- -0.1
+# amp_thres <- 0.1
+# del_thres <- -0.1
+amp_thres <- log2(1.1)
+del_thres <- log2(0.9)
 
 # inputs ------------------------------------------------------------------
 ## input enzyme-substrate table
@@ -24,72 +26,31 @@ length(genes4mat)
 
 # loop by cancer ----------------------------------------------------------
 for (cancer in cancers_sort) {
-  ## input focal CNA values
+  ## input CNA values
   ### if it is breast cancer data, irregular columns names actually won't overlap with proteomics data
-  cna <- fread(input = paste0(cptac2pD, "copy_number/gistic/outputs/cptac2p.", tolower(substr(x = cancer, start = 1, stop = 2)), "/somatic/run_gistic2/0.25/0.99/armpeel1/somatic_clean/focal_data_by_genes.txt"),
-               data.table = F)
+  cna <- fread(input = paste0(cptac2p_genomicD, "copy_number/gatk/v1.3.swap_contamination_fixed/prospective_somatic/gene_level/v1.3.CPTAC2_prospective.2018-03-19/", toupper(substr(cancer, start = 1, stop = 2)), "/gene_level_CNV.", substr(cancer, start = 1, stop = 2), ".v1.3.2018-03-19.tsv"), data.table = F)
   nrow(cna)
-  cna <- cna[cna$`Gene Symbol` %in% genes4mat,]
+  cna <- cna[cna$gene %in% genes4mat,]
   nrow(cna)
   partIDs <- colnames(cna)
-  partIDs <- partIDs[!(partIDs %in% c("Gene Symbol","Gene ID","Cytoband"))]
-  
-  ### input by-case threshold for high-level CNA
-  cna_thres <- fread(input = paste0(cptac2pD, "copy_number/gistic/outputs/cptac2p.", tolower(substr(x = cancer, start = 1, stop = 2)), "/somatic/run_gistic2/0.25/0.99/armpeel1/somatic_clean/sample_cutoffs.txt"),
-                     data.table = F)
-  deep_del_thres_mat <- matrix(data = rep(cna_thres$Low, nrow(cna)), nrow = nrow(cna), byrow = T)
-  deep_amp_thres_mat <- matrix(data = rep(cna_thres$High, nrow(cna)), nrow = nrow(cna), byrow = T)
-  
-  if (any(cna_thres$Low > del_thres) | any(cna_thres$High < amp_thres)) {
-    stop("meow")
-  }
+  partIDs <- partIDs[!(partIDs %in% c("gene","Gene ID","Cytoband"))]
   
   ## generate low-level CNA thresholded matrix
   shallow_del_thres_mat <- matrix(data = rep(del_thres, nrow(cna)*length(partIDs)), nrow = nrow(cna), byrow = T)
   shallow_amp_thres_mat <- matrix(data = rep(amp_thres,  nrow(cna)*length(partIDs)), nrow = nrow(cna), byrow = T)
   
-  shallow_del_thresholded_mat <- (cna[, partIDs] <= shallow_del_thres_mat & cna[, partIDs] > deep_del_thres_mat)
-  shallow_amp_thresholded_mat <- (cna[, partIDs] >= shallow_amp_thres_mat & cna[, partIDs] < deep_amp_thres_mat)
+  shallow_del_thresholded_mat <- (cna[, partIDs] <= shallow_del_thres_mat)
+  shallow_amp_thresholded_mat <- (cna[, partIDs] >= shallow_amp_thres_mat)
 
-  Hugo_Symbol <- data.frame(Hugo_Symbol = as.vector(cna$`Gene Symbol`))
-  ## generate high-level CNA thresholded matrix
-  deep_del_thresholded_mat <- (cna[, partIDs] <= deep_del_thres_mat)
-  deep_amp_thresholded_mat <- (cna[, partIDs] >= deep_amp_thres_mat)
-  
-  fn <- paste0(makeOutDir(resultD = resultD), cancer, "_deep_deletions_in_enzyme_substrate.txt")
-  write.table(x = cbind(Hugo_Symbol, deep_del_thresholded_mat), file = fn, row.names = F, quote = F, sep = '\t')
-  
-  fn <- paste0(makeOutDir(resultD = resultD), cancer, "_deep_amplifications_in_enzyme_substrate.txt")
-  write.table(x = cbind(Hugo_Symbol, deep_amp_thresholded_mat), file = fn, row.names = F, quote = F, sep = '\t')
-  
+  Hugo_Symbol <- data.frame(Hugo_Symbol = as.vector(cna$`gene`))
+
   fn <- paste0(makeOutDir(resultD = resultD), cancer, "_shallow_deletions_", del_thres, "_in_enzyme_substrate.txt")
   write.table(x = cbind(Hugo_Symbol, shallow_del_thresholded_mat), file = fn, row.names = F, quote = F, sep = '\t')
   
   fn <- paste0(makeOutDir(resultD = resultD), cancer, "_shallow_amplifications_", amp_thres, "_in_enzyme_substrate.txt")
   write.table(x = cbind(Hugo_Symbol, shallow_amp_thresholded_mat), file = fn, row.names = F, quote = F, sep = '\t')
   
-  shallow_del_count <- rowSums(shallow_del_thresholded_mat); names(shallow_del_count) <- cna$`Gene Symbol`
-  shallow_amp_count <- rowSums(shallow_amp_thresholded_mat); names(shallow_amp_count) <- cna$`Gene Symbol`
-  deep_del_count <- rowSums(deep_del_thresholded_mat); names(deep_del_count) <- cna$`Gene Symbol`
-  deep_amp_count <- rowSums(deep_amp_thresholded_mat); names(deep_amp_count) <- cna$`Gene Symbol`
-  
-  ## number of genes with at least 4 deep deletion
-  deep_del_count_thresholded <- deep_del_count[deep_del_count >= num_genoalt_thres]
-  deep_amp_count_thresholded <- deep_amp_count[deep_amp_count >= num_genoalt_thres]
-  
-  print(length(deep_del_count_thresholded))
-  print(length(deep_amp_count_thresholded))
-  
-  ## number of kinases genes with at least 4 deep deletions/amplification
-  kinases_deep_amp_count <- deep_amp_count_thresholded[names(deep_amp_count_thresholded) %in% kinases]
-  print(kinases_deep_amp_count)
-  kinases_deep_del_count <- deep_del_count_thresholded[names(deep_del_count_thresholded) %in% kinases]
-  print(kinases_deep_del_count)
-  
-  ## number of phosphatases genes with at least 4 deep deletions/amplification
-  phosphatases_deep_amp_count <- deep_amp_count_thresholded[names(deep_amp_count_thresholded) %in% phosphatases]
-  print(phosphatases_deep_amp_count)
-  phosphatases_deep_del_count <- deep_del_count_thresholded[names(deep_del_count_thresholded) %in% phosphatases]
-  print(phosphatases_deep_del_count)
+  shallow_del_count <- rowSums(shallow_del_thresholded_mat); names(shallow_del_count) <- cna$`gene`
+  shallow_amp_count <- rowSums(shallow_amp_thresholded_mat); names(shallow_amp_count) <- cna$`gene`
 }
 

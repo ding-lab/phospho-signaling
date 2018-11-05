@@ -2,7 +2,7 @@
 ## check the occurance of hotpho cluster mutation and phosphosite in the cptac prospective dataset
 
 # source ------------------------------------------------------------------
-source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+source("Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R")
 library(readr)
 
 # set variables -----------------------------------------------------------

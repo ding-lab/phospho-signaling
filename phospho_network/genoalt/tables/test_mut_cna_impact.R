@@ -7,10 +7,12 @@
 source("Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R")
 
 # set variables -----------------------------------------------------------
-amp_thres <- 0.1
-del_thres <- -0.1
+amp_thres <- log2(1.1)
+del_thres <- log2(0.9)
 num_control_thres <- 4
 num_genoalt_thres <- 4
+id_vars <- c("GENE", "SUB_GENE", "SUB_MOD_RSD", "cancer")
+prefix_vars <- c("p", "num", "meddiff_bottom", "meddiff_upper", "meddiff")
 
 # inputs ------------------------------------------------------------------
 ## input enzyme-substrate table
@@ -23,24 +25,23 @@ enzyme_sub <- unique(rbind(enzyme_sub, enzyme_sub_cis))
 print(nrow(enzyme_sub))
 
 for (cancer in c("BRCA")) {
-  ## input phosphorylation data
+  pro_data <- loadProteinNormalizedTumor(cancer = cancer)
   pho_data <- loadPhosphositeNormalizedTumor(cancer = cancer)
   sampIDs <- colnames(pho_data)[!(colnames(pho_data) %in% c("Gene", "Phosphosite"))]
   pho_data <- pho_data[rowSums(!is.na(pho_data[, sampIDs])) >= (num_control_thres + num_genoalt_thres),]
   pho_head <- formatPhosphosite(pho_data$Phosphosite, pho_data$Gene)
   partIDs <- sampID2partID(sampleID_vector = sampIDs, sample_map = loadSampMap())
   names(pho_data) <- c("Gene", "Phosphosite", partIDs)
+  pho_gdata <- loadPhosphoproteinNormalizedTumor(cancer = cancer)
   
   ## input somatic mutation matrix
   mut_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_mutation_matrix/", cancer, "_somatic_mutation_in_enzyme_substrate.txt"), data.table = F)
   ## input CNA matrix
-  deep_del_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer, "_deep_deletions_in_enzyme_substrate.txt"), data.table = F)
-  deep_amp_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer, "_deep_amplifications_in_enzyme_substrate.txt"), data.table = F)
   shallow_del_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer, "_shallow_deletions_", del_thres, "_in_enzyme_substrate.txt"), data.table = F)
   shallow_amp_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer,"_shallow_amplifications_", amp_thres, "_in_enzyme_substrate.txt"), data.table = F)
   
   ## get the overlap of the participant IDs
-  partIDs_overlap <- intersect(colnames(deep_del_thresholded_mat), intersect(partIDs, colnames(mut_mat)))
+  partIDs_overlap <- intersect(colnames(shallow_del_thresholded_mat), intersect(partIDs, colnames(mut_mat)))
   print(length(partIDs_overlap))
   
   ## the number of mutations
@@ -49,14 +50,10 @@ for (cancer in c("BRCA")) {
   ## the number of CNA
   shallow_del_count <- rowSums(shallow_del_thresholded_mat[, partIDs_overlap]); names(shallow_del_count) <- shallow_del_thresholded_mat$Hugo_Symbol
   shallow_amp_count <- rowSums(shallow_amp_thresholded_mat[, partIDs_overlap]); names(shallow_amp_count) <- shallow_amp_thresholded_mat$Hugo_Symbol
-  deep_del_count <- rowSums(deep_del_thresholded_mat[, partIDs_overlap]); names(deep_del_count) <- deep_del_thresholded_mat$Hugo_Symbol
-  deep_amp_count <- rowSums(deep_amp_thresholded_mat[, partIDs_overlap]); names(deep_amp_count) <- deep_amp_thresholded_mat$Hugo_Symbol
-  
+
   ## get the genes to test
   genes_num_genoalt_thresholded <- union(names(mut_count)[mut_count >= num_genoalt_thres], names(shallow_del_count)[shallow_del_count >= num_genoalt_thres])
   genes_num_genoalt_thresholded <- union(genes_num_genoalt_thresholded, names(shallow_amp_count)[shallow_amp_count >= num_genoalt_thres])
-  genes_num_genoalt_thresholded <- union(genes_num_genoalt_thresholded, names(deep_del_count)[deep_del_count >= num_genoalt_thres])
-  genes_num_genoalt_thresholded <- union(genes_num_genoalt_thresholded, names(deep_amp_count)[deep_amp_count >= num_genoalt_thres])
   print(length(genes_num_genoalt_thresholded))
   
   ## initiate identifier columns
@@ -71,8 +68,6 @@ for (cancer in c("BRCA")) {
   ## initiate value columns
   num_control <- vector(mode = "numeric", length = nrow(enzyme_sub_sites))
   num_mut <- num_control; meddiff_mut <- num_control; p_mut <- num_control; meddiff_bottom_mut <- num_control; meddiff_upper_mut <- num_control
-  num_deep_amp <- num_control; meddiff_deep_amp <- num_control; p_deep_amp <- num_control; meddiff_bottom_deep_amp <- num_control; meddiff_upper_deep_amp <- num_control
-  num_deep_del <- num_control; meddiff_deep_del <- num_control; p_deep_del <- num_control; meddiff_bottom_deep_del <- num_control; meddiff_upper_deep_del <- num_control
   num_shallow_amp <- num_control; meddiff_shallow_amp <- num_control; p_shallow_amp <- num_control; meddiff_bottom_shallow_amp <- num_control; meddiff_upper_shallow_amp <- num_control
   num_shallow_del <- num_control; meddiff_shallow_del <- num_control; p_shallow_del <- num_control; meddiff_bottom_shallow_del <- num_control; meddiff_upper_shallow_del <- num_control
   
@@ -82,18 +77,6 @@ for (cancer in c("BRCA")) {
       mut_partIDs <- partIDs_overlap[(mut_mat_en[,partIDs_overlap] != "") & (mut_mat_en[, partIDs_overlap] != "Silent")]
     } else {
       mut_partIDs <- NULL 
-    }
-    deep_del_thresholded_mat_en <- deep_del_thresholded_mat[deep_del_thresholded_mat$Hugo_Symbol == enzyme,]
-    if (nrow(deep_del_thresholded_mat_en) > 0){
-      deep_del_partIDs <- partIDs_overlap[(deep_del_thresholded_mat_en[,partIDs_overlap] == "TRUE")]
-    } else {
-      deep_del_partIDs <- NULL 
-    }
-    deep_amp_thresholded_mat_en <- deep_amp_thresholded_mat[deep_amp_thresholded_mat$Hugo_Symbol == enzyme,]
-    if (nrow(deep_amp_thresholded_mat_en) > 0){
-      deep_amp_partIDs <- partIDs_overlap[(deep_amp_thresholded_mat_en[,partIDs_overlap] == "TRUE")]
-    } else {
-      deep_amp_partIDs <- NULL 
     }
     shallow_amp_thresholded_mat_en <- shallow_amp_thresholded_mat[shallow_amp_thresholded_mat$Hugo_Symbol == enzyme,]
     if (nrow(shallow_amp_thresholded_mat_en) > 0){
@@ -108,7 +91,7 @@ for (cancer in c("BRCA")) {
       shallow_del_partIDs <- NULL 
     }
     
-    mut_cnv_partIDs <- c(mut_partIDs, deep_amp_partIDs, deep_del_partIDs, shallow_amp_partIDs, shallow_amp_partIDs)
+    mut_cnv_partIDs <- c(mut_partIDs, shallow_amp_partIDs, shallow_amp_partIDs)
     control_partIDs <- partIDs_overlap[!(partIDs_overlap %in% mut_cnv_partIDs)]
     
     print(paste0("enzyme:", enzyme))
@@ -137,34 +120,6 @@ for (cancer in c("BRCA")) {
               p_mut[i] <- stat$p.value
               meddiff_bottom_mut[i] <- stat$conf.int[1]
               meddiff_upper_mut[i] <- stat$conf.int[2]
-            }
-          }
-          
-          
-          deep_amp_pho <- pho_sub[, deep_amp_partIDs]
-          deep_amp_pho <- deep_amp_pho[!is.na(deep_amp_pho)]
-          num_deep_amp[i] <- length(deep_amp_pho)
-          if (num_deep_amp[i] > 0) {
-            meddiff_deep_amp[i] <- median(deep_amp_pho) - median(control_pho)
-            if (num_deep_amp[i] >= num_genoalt_thres){
-              stat <- wilcox.test(x = deep_amp_pho, y = control_pho, conf.int = T)
-              p_deep_amp[i] <- stat$p.value
-              meddiff_bottom_deep_amp[i] <- stat$conf.int[1]
-              meddiff_upper_deep_amp[i] <- stat$conf.int[2]
-            }
-          }
-          
-          
-          deep_del_pho <- pho_sub[, deep_del_partIDs]
-          deep_del_pho <- deep_del_pho[!is.na(deep_del_pho)]
-          num_deep_del[i] <- length(deep_del_pho)
-          if (num_deep_del[i] > 0) {
-            meddiff_deep_del[i] <- median(deep_del_pho) - median(control_pho)
-            if (num_deep_del[i] >= num_genoalt_thres){
-              stat <- wilcox.test(x = deep_del_pho, y = control_pho, conf.int = T)
-              p_deep_del[i] <- stat$p.value
-              meddiff_bottom_deep_del[i] <- stat$conf.int[1]
-              meddiff_upper_deep_del[i] <- stat$conf.int[2]
             }
           }
           
@@ -199,10 +154,8 @@ for (cancer in c("BRCA")) {
     print(which(i))
   }
   mut_cnv_tab <- enzyme_sub_sites
-  mut_cnv_tab <- cbind(mut_cnv_tab, data.frame(num_mut, num_deep_amp, num_deep_del, num_shallow_amp, num_shallow_del, num_control,
+  mut_cnv_tab <- cbind(mut_cnv_tab, data.frame(num_mut, num_shallow_amp, num_shallow_del, num_control,
                                                p_mut, meddiff_bottom_mut, meddiff_upper_mut, meddiff_mut,
-                                               p_deep_amp, meddiff_bottom_deep_amp, meddiff_upper_deep_amp, meddiff_deep_amp,
-                                               p_deep_del, meddiff_bottom_deep_del, meddiff_upper_deep_del, meddiff_deep_del,
                                                p_shallow_amp, meddiff_bottom_shallow_amp, meddiff_upper_shallow_amp, meddiff_shallow_amp,
                                                p_shallow_del, meddiff_bottom_shallow_del, meddiff_upper_shallow_del, meddiff_shallow_del))
   mut_cnv_tab$cancer <- cancer
@@ -210,24 +163,23 @@ for (cancer in c("BRCA")) {
 }
 
 for (cancer in c("OV")) {
-  ## input phosphorylation data
+  pro_data <- loadProteinNormalizedTumor(cancer = cancer)
   pho_data <- loadPhosphositeNormalizedTumor(cancer = cancer)
   sampIDs <- colnames(pho_data)[!(colnames(pho_data) %in% c("Gene", "Phosphosite"))]
   pho_data <- pho_data[rowSums(!is.na(pho_data[, sampIDs])) >= (num_control_thres + num_genoalt_thres),]
   pho_head <- formatPhosphosite(pho_data$Phosphosite, pho_data$Gene)
   partIDs <- sampID2partID(sampleID_vector = sampIDs, sample_map = loadSampMap())
   names(pho_data) <- c("Gene", "Phosphosite", partIDs)
+  pho_gdata <- loadPhosphoproteinNormalizedTumor(cancer = cancer)
   
   ## input somatic mutation matrix
   mut_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_mutation_matrix/", cancer, "_somatic_mutation_in_enzyme_substrate.txt"), data.table = F)
   ## input CNA matrix
-  deep_del_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer, "_deep_deletions_in_enzyme_substrate.txt"), data.table = F)
-  deep_amp_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer, "_deep_amplifications_in_enzyme_substrate.txt"), data.table = F)
   shallow_del_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer, "_shallow_deletions_", del_thres, "_in_enzyme_substrate.txt"), data.table = F)
   shallow_amp_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer,"_shallow_amplifications_", amp_thres, "_in_enzyme_substrate.txt"), data.table = F)
   
   ## get the overlap of the participant IDs
-  partIDs_overlap <- intersect(colnames(deep_del_thresholded_mat), intersect(partIDs, colnames(mut_mat)))
+  partIDs_overlap <- intersect(colnames(shallow_del_thresholded_mat), intersect(partIDs, colnames(mut_mat)))
   print(length(partIDs_overlap))
   
   ## the number of mutations
@@ -236,14 +188,10 @@ for (cancer in c("OV")) {
   ## the number of CNA
   shallow_del_count <- rowSums(shallow_del_thresholded_mat[, partIDs_overlap]); names(shallow_del_count) <- shallow_del_thresholded_mat$Hugo_Symbol
   shallow_amp_count <- rowSums(shallow_amp_thresholded_mat[, partIDs_overlap]); names(shallow_amp_count) <- shallow_amp_thresholded_mat$Hugo_Symbol
-  deep_del_count <- rowSums(deep_del_thresholded_mat[, partIDs_overlap]); names(deep_del_count) <- deep_del_thresholded_mat$Hugo_Symbol
-  deep_amp_count <- rowSums(deep_amp_thresholded_mat[, partIDs_overlap]); names(deep_amp_count) <- deep_amp_thresholded_mat$Hugo_Symbol
   
   ## get the genes to test
   genes_num_genoalt_thresholded <- union(names(mut_count)[mut_count >= num_genoalt_thres], names(shallow_del_count)[shallow_del_count >= num_genoalt_thres])
   genes_num_genoalt_thresholded <- union(genes_num_genoalt_thresholded, names(shallow_amp_count)[shallow_amp_count >= num_genoalt_thres])
-  genes_num_genoalt_thresholded <- union(genes_num_genoalt_thresholded, names(deep_del_count)[deep_del_count >= num_genoalt_thres])
-  genes_num_genoalt_thresholded <- union(genes_num_genoalt_thresholded, names(deep_amp_count)[deep_amp_count >= num_genoalt_thres])
   print(length(genes_num_genoalt_thresholded))
   
   ## initiate identifier columns
@@ -258,8 +206,6 @@ for (cancer in c("OV")) {
   ## initiate value columns
   num_control <- vector(mode = "numeric", length = nrow(enzyme_sub_sites))
   num_mut <- num_control; meddiff_mut <- num_control; p_mut <- num_control; meddiff_bottom_mut <- num_control; meddiff_upper_mut <- num_control
-  num_deep_amp <- num_control; meddiff_deep_amp <- num_control; p_deep_amp <- num_control; meddiff_bottom_deep_amp <- num_control; meddiff_upper_deep_amp <- num_control
-  num_deep_del <- num_control; meddiff_deep_del <- num_control; p_deep_del <- num_control; meddiff_bottom_deep_del <- num_control; meddiff_upper_deep_del <- num_control
   num_shallow_amp <- num_control; meddiff_shallow_amp <- num_control; p_shallow_amp <- num_control; meddiff_bottom_shallow_amp <- num_control; meddiff_upper_shallow_amp <- num_control
   num_shallow_del <- num_control; meddiff_shallow_del <- num_control; p_shallow_del <- num_control; meddiff_bottom_shallow_del <- num_control; meddiff_upper_shallow_del <- num_control
   
@@ -269,18 +215,6 @@ for (cancer in c("OV")) {
       mut_partIDs <- partIDs_overlap[(mut_mat_en[,partIDs_overlap] != "") & (mut_mat_en[, partIDs_overlap] != "Silent")]
     } else {
       mut_partIDs <- NULL 
-    }
-    deep_del_thresholded_mat_en <- deep_del_thresholded_mat[deep_del_thresholded_mat$Hugo_Symbol == enzyme,]
-    if (nrow(deep_del_thresholded_mat_en) > 0){
-      deep_del_partIDs <- partIDs_overlap[(deep_del_thresholded_mat_en[,partIDs_overlap] == "TRUE")]
-    } else {
-      deep_del_partIDs <- NULL 
-    }
-    deep_amp_thresholded_mat_en <- deep_amp_thresholded_mat[deep_amp_thresholded_mat$Hugo_Symbol == enzyme,]
-    if (nrow(deep_amp_thresholded_mat_en) > 0){
-      deep_amp_partIDs <- partIDs_overlap[(deep_amp_thresholded_mat_en[,partIDs_overlap] == "TRUE")]
-    } else {
-      deep_amp_partIDs <- NULL 
     }
     shallow_amp_thresholded_mat_en <- shallow_amp_thresholded_mat[shallow_amp_thresholded_mat$Hugo_Symbol == enzyme,]
     if (nrow(shallow_amp_thresholded_mat_en) > 0){
@@ -295,7 +229,7 @@ for (cancer in c("OV")) {
       shallow_del_partIDs <- NULL 
     }
     
-    mut_cnv_partIDs <- c(mut_partIDs, deep_amp_partIDs, deep_del_partIDs, shallow_amp_partIDs, shallow_amp_partIDs)
+    mut_cnv_partIDs <- c(mut_partIDs, shallow_amp_partIDs, shallow_amp_partIDs)
     control_partIDs <- partIDs_overlap[!(partIDs_overlap %in% mut_cnv_partIDs)]
     
     print(paste0("enzyme:", enzyme))
@@ -324,34 +258,6 @@ for (cancer in c("OV")) {
               p_mut[i] <- stat$p.value
               meddiff_bottom_mut[i] <- stat$conf.int[1]
               meddiff_upper_mut[i] <- stat$conf.int[2]
-            }
-          }
-          
-          
-          deep_amp_pho <- pho_sub[, deep_amp_partIDs]
-          deep_amp_pho <- deep_amp_pho[!is.na(deep_amp_pho)]
-          num_deep_amp[i] <- length(deep_amp_pho)
-          if (num_deep_amp[i] > 0) {
-            meddiff_deep_amp[i] <- median(deep_amp_pho) - median(control_pho)
-            if (num_deep_amp[i] >= num_genoalt_thres){
-              stat <- wilcox.test(x = deep_amp_pho, y = control_pho, conf.int = T)
-              p_deep_amp[i] <- stat$p.value
-              meddiff_bottom_deep_amp[i] <- stat$conf.int[1]
-              meddiff_upper_deep_amp[i] <- stat$conf.int[2]
-            }
-          }
-          
-          
-          deep_del_pho <- pho_sub[, deep_del_partIDs]
-          deep_del_pho <- deep_del_pho[!is.na(deep_del_pho)]
-          num_deep_del[i] <- length(deep_del_pho)
-          if (num_deep_del[i] > 0) {
-            meddiff_deep_del[i] <- median(deep_del_pho) - median(control_pho)
-            if (num_deep_del[i] >= num_genoalt_thres){
-              stat <- wilcox.test(x = deep_del_pho, y = control_pho, conf.int = T)
-              p_deep_del[i] <- stat$p.value
-              meddiff_bottom_deep_del[i] <- stat$conf.int[1]
-              meddiff_upper_deep_del[i] <- stat$conf.int[2]
             }
           }
           
@@ -386,10 +292,8 @@ for (cancer in c("OV")) {
     print(which(i))
   }
   mut_cnv_tab <- enzyme_sub_sites
-  mut_cnv_tab <- cbind(mut_cnv_tab, data.frame(num_mut, num_deep_amp, num_deep_del, num_shallow_amp, num_shallow_del, num_control,
+  mut_cnv_tab <- cbind(mut_cnv_tab, data.frame(num_mut, num_shallow_amp, num_shallow_del, num_control,
                                                p_mut, meddiff_bottom_mut, meddiff_upper_mut, meddiff_mut,
-                                               p_deep_amp, meddiff_bottom_deep_amp, meddiff_upper_deep_amp, meddiff_deep_amp,
-                                               p_deep_del, meddiff_bottom_deep_del, meddiff_upper_deep_del, meddiff_deep_del,
                                                p_shallow_amp, meddiff_bottom_shallow_amp, meddiff_upper_shallow_amp, meddiff_shallow_amp,
                                                p_shallow_del, meddiff_bottom_shallow_del, meddiff_upper_shallow_del, meddiff_shallow_del))
   mut_cnv_tab$cancer <- cancer
@@ -397,24 +301,23 @@ for (cancer in c("OV")) {
 }
 
 for (cancer in c("CO")) {
-  ## input phosphorylation data
+  pro_data <- loadProteinNormalizedTumor(cancer = cancer)
   pho_data <- loadPhosphositeNormalizedTumor(cancer = cancer)
   sampIDs <- colnames(pho_data)[!(colnames(pho_data) %in% c("Gene", "Phosphosite"))]
   pho_data <- pho_data[rowSums(!is.na(pho_data[, sampIDs])) >= (num_control_thres + num_genoalt_thres),]
   pho_head <- formatPhosphosite(pho_data$Phosphosite, pho_data$Gene)
   partIDs <- sampID2partID(sampleID_vector = sampIDs, sample_map = loadSampMap())
   names(pho_data) <- c("Gene", "Phosphosite", partIDs)
+  pho_gdata <- loadPhosphoproteinNormalizedTumor(cancer = cancer)
   
   ## input somatic mutation matrix
   mut_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_mutation_matrix/", cancer, "_somatic_mutation_in_enzyme_substrate.txt"), data.table = F)
   ## input CNA matrix
-  deep_del_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer, "_deep_deletions_in_enzyme_substrate.txt"), data.table = F)
-  deep_amp_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer, "_deep_amplifications_in_enzyme_substrate.txt"), data.table = F)
   shallow_del_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer, "_shallow_deletions_", del_thres, "_in_enzyme_substrate.txt"), data.table = F)
   shallow_amp_thresholded_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_cna_matrix/", cancer,"_shallow_amplifications_", amp_thres, "_in_enzyme_substrate.txt"), data.table = F)
   
   ## get the overlap of the participant IDs
-  partIDs_overlap <- intersect(colnames(deep_del_thresholded_mat), intersect(partIDs, colnames(mut_mat)))
+  partIDs_overlap <- intersect(colnames(shallow_del_thresholded_mat), intersect(partIDs, colnames(mut_mat)))
   print(length(partIDs_overlap))
   
   ## the number of mutations
@@ -423,14 +326,10 @@ for (cancer in c("CO")) {
   ## the number of CNA
   shallow_del_count <- rowSums(shallow_del_thresholded_mat[, partIDs_overlap]); names(shallow_del_count) <- shallow_del_thresholded_mat$Hugo_Symbol
   shallow_amp_count <- rowSums(shallow_amp_thresholded_mat[, partIDs_overlap]); names(shallow_amp_count) <- shallow_amp_thresholded_mat$Hugo_Symbol
-  deep_del_count <- rowSums(deep_del_thresholded_mat[, partIDs_overlap]); names(deep_del_count) <- deep_del_thresholded_mat$Hugo_Symbol
-  deep_amp_count <- rowSums(deep_amp_thresholded_mat[, partIDs_overlap]); names(deep_amp_count) <- deep_amp_thresholded_mat$Hugo_Symbol
   
   ## get the genes to test
   genes_num_genoalt_thresholded <- union(names(mut_count)[mut_count >= num_genoalt_thres], names(shallow_del_count)[shallow_del_count >= num_genoalt_thres])
   genes_num_genoalt_thresholded <- union(genes_num_genoalt_thresholded, names(shallow_amp_count)[shallow_amp_count >= num_genoalt_thres])
-  genes_num_genoalt_thresholded <- union(genes_num_genoalt_thresholded, names(deep_del_count)[deep_del_count >= num_genoalt_thres])
-  genes_num_genoalt_thresholded <- union(genes_num_genoalt_thresholded, names(deep_amp_count)[deep_amp_count >= num_genoalt_thres])
   print(length(genes_num_genoalt_thresholded))
   
   ## initiate identifier columns
@@ -445,8 +344,6 @@ for (cancer in c("CO")) {
   ## initiate value columns
   num_control <- vector(mode = "numeric", length = nrow(enzyme_sub_sites))
   num_mut <- num_control; meddiff_mut <- num_control; p_mut <- num_control; meddiff_bottom_mut <- num_control; meddiff_upper_mut <- num_control
-  num_deep_amp <- num_control; meddiff_deep_amp <- num_control; p_deep_amp <- num_control; meddiff_bottom_deep_amp <- num_control; meddiff_upper_deep_amp <- num_control
-  num_deep_del <- num_control; meddiff_deep_del <- num_control; p_deep_del <- num_control; meddiff_bottom_deep_del <- num_control; meddiff_upper_deep_del <- num_control
   num_shallow_amp <- num_control; meddiff_shallow_amp <- num_control; p_shallow_amp <- num_control; meddiff_bottom_shallow_amp <- num_control; meddiff_upper_shallow_amp <- num_control
   num_shallow_del <- num_control; meddiff_shallow_del <- num_control; p_shallow_del <- num_control; meddiff_bottom_shallow_del <- num_control; meddiff_upper_shallow_del <- num_control
   
@@ -456,18 +353,6 @@ for (cancer in c("CO")) {
       mut_partIDs <- partIDs_overlap[(mut_mat_en[,partIDs_overlap] != "") & (mut_mat_en[, partIDs_overlap] != "Silent")]
     } else {
       mut_partIDs <- NULL 
-    }
-    deep_del_thresholded_mat_en <- deep_del_thresholded_mat[deep_del_thresholded_mat$Hugo_Symbol == enzyme,]
-    if (nrow(deep_del_thresholded_mat_en) > 0){
-      deep_del_partIDs <- partIDs_overlap[(deep_del_thresholded_mat_en[,partIDs_overlap] == "TRUE")]
-    } else {
-      deep_del_partIDs <- NULL 
-    }
-    deep_amp_thresholded_mat_en <- deep_amp_thresholded_mat[deep_amp_thresholded_mat$Hugo_Symbol == enzyme,]
-    if (nrow(deep_amp_thresholded_mat_en) > 0){
-      deep_amp_partIDs <- partIDs_overlap[(deep_amp_thresholded_mat_en[,partIDs_overlap] == "TRUE")]
-    } else {
-      deep_amp_partIDs <- NULL 
     }
     shallow_amp_thresholded_mat_en <- shallow_amp_thresholded_mat[shallow_amp_thresholded_mat$Hugo_Symbol == enzyme,]
     if (nrow(shallow_amp_thresholded_mat_en) > 0){
@@ -482,7 +367,7 @@ for (cancer in c("CO")) {
       shallow_del_partIDs <- NULL 
     }
     
-    mut_cnv_partIDs <- c(mut_partIDs, deep_amp_partIDs, deep_del_partIDs, shallow_amp_partIDs, shallow_amp_partIDs)
+    mut_cnv_partIDs <- c(mut_partIDs, shallow_amp_partIDs, shallow_amp_partIDs)
     control_partIDs <- partIDs_overlap[!(partIDs_overlap %in% mut_cnv_partIDs)]
     
     print(paste0("enzyme:", enzyme))
@@ -511,34 +396,6 @@ for (cancer in c("CO")) {
               p_mut[i] <- stat$p.value
               meddiff_bottom_mut[i] <- stat$conf.int[1]
               meddiff_upper_mut[i] <- stat$conf.int[2]
-            }
-          }
-          
-          
-          deep_amp_pho <- pho_sub[, deep_amp_partIDs]
-          deep_amp_pho <- deep_amp_pho[!is.na(deep_amp_pho)]
-          num_deep_amp[i] <- length(deep_amp_pho)
-          if (num_deep_amp[i] > 0) {
-            meddiff_deep_amp[i] <- median(deep_amp_pho) - median(control_pho)
-            if (num_deep_amp[i] >= num_genoalt_thres){
-              stat <- wilcox.test(x = deep_amp_pho, y = control_pho, conf.int = T)
-              p_deep_amp[i] <- stat$p.value
-              meddiff_bottom_deep_amp[i] <- stat$conf.int[1]
-              meddiff_upper_deep_amp[i] <- stat$conf.int[2]
-            }
-          }
-          
-          
-          deep_del_pho <- pho_sub[, deep_del_partIDs]
-          deep_del_pho <- deep_del_pho[!is.na(deep_del_pho)]
-          num_deep_del[i] <- length(deep_del_pho)
-          if (num_deep_del[i] > 0) {
-            meddiff_deep_del[i] <- median(deep_del_pho) - median(control_pho)
-            if (num_deep_del[i] >= num_genoalt_thres){
-              stat <- wilcox.test(x = deep_del_pho, y = control_pho, conf.int = T)
-              p_deep_del[i] <- stat$p.value
-              meddiff_bottom_deep_del[i] <- stat$conf.int[1]
-              meddiff_upper_deep_del[i] <- stat$conf.int[2]
             }
           }
           
@@ -573,12 +430,37 @@ for (cancer in c("CO")) {
     print(which(i))
   }
   mut_cnv_tab <- enzyme_sub_sites
-  mut_cnv_tab <- cbind(mut_cnv_tab, data.frame(num_mut, num_deep_amp, num_deep_del, num_shallow_amp, num_shallow_del, num_control,
+  mut_cnv_tab <- cbind(mut_cnv_tab, data.frame(num_mut, num_shallow_amp, num_shallow_del, num_control,
                                                p_mut, meddiff_bottom_mut, meddiff_upper_mut, meddiff_mut,
-                                               p_deep_amp, meddiff_bottom_deep_amp, meddiff_upper_deep_amp, meddiff_deep_amp,
-                                               p_deep_del, meddiff_bottom_deep_del, meddiff_upper_deep_del, meddiff_deep_del,
                                                p_shallow_amp, meddiff_bottom_shallow_amp, meddiff_upper_shallow_amp, meddiff_shallow_amp,
                                                p_shallow_del, meddiff_bottom_shallow_del, meddiff_upper_shallow_del, meddiff_shallow_del))
   mut_cnv_tab$cancer <- cancer
   write.table(x = mut_cnv_tab, file = paste0(makeOutDir(resultD = resultD), cancer, "_mut_cnv_tab.txt"), col.names = T, row.names = F, quote = F)
 }
+
+mut_cnv_cans <- NULL
+for (cancer in c("BRCA", "OV", "CO")) {
+  mut_cnv_tab <- fread(input = paste0("./cptac2p/analysis_results/phospho_network/genoalt/tables/test_mut_cna_impact/", cancer, "_mut_cnv_tab.txt"), data.table = F)
+  ## filter mutation-impacted kinase-substrate pairs
+  mut_tab <- mut_cnv_tab
+  mut_tab <- mut_tab[mut_tab$p_mut > 0,]
+ 
+  for (genoalt_type in c("mut", "shallow_amp", "shallow_del")) {
+    ## format the  table
+    mut_tab.f <- mut_tab[, c(id_vars, paste0(paste0(prefix_vars, "", sep = "_"), genoalt_type), "num_control")]
+    colnames(mut_tab.f) <- c(id_vars, prefix_vars, "num_control")
+    mut_tab.f$genoalt_type <- genoalt_type
+    mut_cnv_cans <- rbind(mut_cnv_cans, mut_tab.f)
+  }
+}
+mut_cnv_cans <- unique(mut_cnv_cans)
+
+mut_cnv_cans$SELF <- ifelse(as.vector(mut_cnv_cans$GENE) == as.vector(mut_cnv_cans$SUB_GENE), "cis", "trans")
+mut_cnv_cans$driver_gene_type.en <- ""
+mut_cnv_cans$driver_gene_type.en[mut_cnv_cans$GENE %in% oncogenes] <- "oncogene"
+mut_cnv_cans$driver_gene_type.en[mut_cnv_cans$GENE %in% tsgs] <- "tsg"
+
+write.table(x = mut_cnv_cans, file = paste0(makeOutDir(resultD = resultD), "mut_cnv_cans.txt"), row.names = F, quote = F, sep = "\t")
+
+
+

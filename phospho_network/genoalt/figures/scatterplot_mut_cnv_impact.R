@@ -72,12 +72,15 @@ subdir1 <- paste0(resultDnow, "mutation", "/")
 dir.create(subdir1)
 
 for (cancer in cancers2process) {
+# for (cancer in "BRCA") {
+  
   # cancer <- "BRCA"
   subdir2 <- paste0(subdir1, cancer, "/")
   dir.create(subdir2)
   
   ## input the complete table of mutation impact
   mut_cnv_tab <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_cna_impact/", cancer, "_mut_cnv_tab.txt"), data.table = F)
+  stop()
   mut_cnv_tab$pair_pro <- paste0(mut_cnv_tab$GENE, ":", mut_cnv_tab$SUB_GENE)
   mut_cnv_tab$pair <- paste0(mut_cnv_tab$GENE, ":", mut_cnv_tab$SUB_GENE, ":", mut_cnv_tab$SUB_MOD_RSD)
   mut_cnv_tab <- merge(mut_cnv_tab, unique(ptms_site_pairs_sup[, c("GENE", "enzyme_type")]), all.x = T)
@@ -105,11 +108,12 @@ for (cancer in cancers2process) {
     # self <- "trans"
     ## extract the SMG table
     # tab_mut <- mut_cnv_tab[(mut_cnv_tab$GENE %in% SMGs[[cancer]] | mut_cnv_tab$cancer == "OV") & mut_cnv_tab$SELF == self,]
-    # tab_mut <- mut_cnv_tab[mut_cnv_tab$GENE == "BRAF",]
+    tab_mut <- mut_cnv_tab[mut_cnv_tab$SUB_GENE == "TP53" & mut_cnv_tab$GENE == "TP53",]
+    tab_mut <- tab_mut[!duplicated(tab_mut$SUB_MOD_RSD),]
     # tab_mut <- mut_cnv_tab[mut_cnv_tab$SUB_GENE == "AKT1" & mut_cnv_tab$GENE == "AKT1",]
     # tab_mut <- tab_mut[tab_mut$GENE %in% driver_genes$Gene,]
     # tab_mut <- mut_cnv_tab[mut_cnv_tab$SUB_GENE == "PIK3R1" & mut_cnv_tab$p_mut < sig_thres & mut_cnv_tab$p_mut > 0 & mut_cnv_tab$SELF == self,]
-    tab_mut <- mut_cnv_tab[mut_cnv_tab$SUB_GENE == "AKT1" & mut_cnv_tab$p_mut < sig_thres & mut_cnv_tab$p_mut > 0 & mut_cnv_tab$SELF == self,]
+    # tab_mut <- mut_cnv_tab[mut_cnv_tab$SUB_GENE == "AKT1" & mut_cnv_tab$p_mut < sig_thres & mut_cnv_tab$p_mut > 0 & mut_cnv_tab$SELF == self,]
     
     ## annoate substrate genes to TCGA pathways
     sub_genes2pathways <- map2TCGApathwaways(gene_list = unique(tab_mut$SUB_GENE), pathway_list = tcga_pathways_pluskegg_and_pathway)
@@ -128,7 +132,7 @@ for (cancer in cancers2process) {
     } else {
       for (i in 1:nrow(tab_mut)) {
         enzyme <- as.character(tab_mut[i, "GENE"])
-        enzyme <- "PTEN"
+        # enzyme <- "AKT1"
         substrate <- as.character(tab_mut[i, "SUB_GENE"])
         # substrate <- "AKT1"
         rsd <- as.character(tab_mut[i, "SUB_MOD_RSD"])
@@ -280,6 +284,32 @@ for (cancer in cancers2process) {
           tab4jude <- tab4jude_mut
           write.table(x = tab4jude, file = paste0(subdir5, "tab4jude_", enzyme, "_", cancer, ".txt"), row.names = F, quote = F, sep = ";", col.names = F)
         }
+
+        tab2p$y <- as.vector(tab2p$pho_sub)
+        pos <- position_jitter(width = 0.5, seed = 1)
+        p = ggplot(tab2p, aes(x=phog_en, y=y))
+        p = p + geom_point(aes(color = sample_type, shape = subtype), position = pos, stroke = 0, alpha = 0.8)
+        p = p + geom_text_repel(data = tab2p, mapping = aes(segment.color = sample_type, label= as.character(text), color = sample_type),
+                                force = 1, segment.size = 0.5, segment.alpha = 0.2, size=2.5,alpha=0.8, position = pos)
+        p = p + scale_x_discrete(breaks = c("enzyme_mutation", "enzyme_deep_amplification", "enzyme_deep_deletion", "enzyme_shallow_amplification", "enzyme_shallow_deletion", "control"),
+                                 label = c(paste0(enzyme, "_mutation"),
+                                           paste0(enzyme, "_deep_amplification"), paste0(enzyme, "_deep_deletion"),
+                                           paste0(enzyme, "_shallow_amplification"), paste0(enzyme, "_shallow_deletion"),
+                                           "control"))
+        p = p + labs(y=paste0(substrate, " ", rsd, " phosphorylation abundance(log2 ratio) in", cancer))
+        p = p + theme_nogrid()
+        p = p + theme(axis.title.x = element_blank(),
+                      axis.text.x = element_text(size= 10, vjust=0.5, hjust = 0.5, angle = 90),
+                      axis.text.y = element_text(colour="black", size=8))#element_text(colour="black", size=14))
+        p = p + theme(title = element_text(size = 8))
+        p = p + scale_color_manual(values = c("enzyme_mutation" = "purple",
+                                              "enzyme_deep_amplification" = set1[1], "enzyme_deep_deletion"  = set1[2],
+                                              "enzyme_shallow_amplification" = "#FB9A99", "enzyme_shallow_deletion"  = "#A6CEE3",
+                                              "control" = "grey"))
+        p
+        fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_phog_en_vs_pho_sub.pdf")
+        ggsave(file=fn, height=7, width = 8, useDingbats=FALSE)
+        
         
         tab2p$y <- as.vector(tab2p$pho_sub)
         pos <- position_jitter(width = 0.5, seed = 1)

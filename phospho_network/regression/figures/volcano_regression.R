@@ -7,13 +7,9 @@ source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_
 library(ggrepel)
 
 # inputs ------------------------------------------------------------------
-## input enzyme substrate table
-# ptms_site_pairs_sup <- read_csv(paste0(ppnD, "compile_enzyme_substrate/tables/compile_omnipath_networkin/omnipath_networkin_enzyme_substrate_site_level_union.csv"))
-ptms_site_pairs_sup <- read_csv(paste0(ppnD, "compile_enzyme_substrate/tables/compile_omnipath_networkin_depod/omnipath_networkin_enzyme_substrate_site_level_union_source_cleaned_addDEPOD_extended.csv"))
-
 # set variables -----------------------------------------------------------
-reg_nonNA2test <- c(20, 25)
-top_num <- 10
+reg_nonNA2test <- c(20)
+top_num <- 5
 # cptac_phase2process <- "cptac3"
 # cancers2process <- "UCEC"
 cptac_phase2process <- "cptac2p_3can"
@@ -21,6 +17,7 @@ cancers2process <- cancers_sort
 pdf_sizes_by_facetx <- list("cptac3" = 5, "cptac2p_3can" = 12)
 cap_by_cptac_phase <- list("cptac2p_3can" = list(trans = 15, cis = 30),
                       "cptac3" = list(trans = 5, cis = 30))
+fdr_thres <- c(0.05, 0.2); names(fdr_thres) <- c("kinase", "phosphatase")
 
 # kinases ## unique in each cancer -----------------------------------------------------------------
 for (reg_nonNA in reg_nonNA2test) {
@@ -31,6 +28,8 @@ for (reg_nonNA in reg_nonNA2test) {
     regression <- fread(input = paste0(ppnD, "regression/tables/", "change_regression_nonNA/", 
                                        enzyme_type, "_substrate_regression_", cptac_phase2process, "_tumor",
                                        "_reg_nonNA", reg_nonNA, ".txt"), data.table = F)
+    regression <- markSigKS(regression = regression, sig_thres = fdr_thres[enzyme_type], enzyme_type = enzyme_type)
+    regression$regulated <- (regression$fdr_sig & regression$coef_sig)
     
     subdir1 <- paste0(makeOutDir(resultD = resultD), enzyme_type, "/")
     dir.create(subdir1)
@@ -48,16 +47,29 @@ for (reg_nonNA in reg_nonNA2test) {
       tab2p$y[tab2p$y > cap] <- cap
       tab2p$y[tab2p$y < (-cap)] <- -cap
       tab2p <- tab2p[order(tab2p$log_FDR, decreasing = T),]
-      # tab2p_text <- tab2p[tab2p$pair %in% head(tab2p$pair[order(tab2p$log_FDR, decreasing = T)], n = 1),]
-      # driver_genes <- loadGeneList(gene_type = "driver", cancer = cancer, is.soft.limit = "soft.limit")
-      # tab2p_text <- tab2p[tab2p$pair %in% head(tab2p$pair[tab2p$GENE %in% driver_genes], n = 1),]
-      # tab2p_text$text <- paste0(tab2p_text$pair, "(", tab2p_text$Cancer, ")")
+
       tab2p_regulated <- tab2p[tab2p$regulated,]
       tab2p_unregulated <- tab2p[!(tab2p$regulated),]
       tab2p_regulated$Cancer <- factor(tab2p_regulated$Cancer, levels = cancers2process)
       tab2p_unregulated$Cancer <- factor(tab2p_unregulated$Cancer, levels = cancers2process)
       
-      for (text_cutoff in c(-log10(fdr_pk))) {
+      sub_genes2pathways <- map2TCGApathwaways(gene_list = unique(tab2p_regulated$SUB_GENE), pathway_list = tcga_pathways_pluskegg_and_pathway)
+      sub_genes2pathways <- data.frame(SUB_GENE = rep(x = names(sub_genes2pathways), sapply(X = sub_genes2pathways, FUN = function(x) length(x))), 
+                                       SUB_GENE.path = unlist(sub_genes2pathways, use.names = F))
+      
+      
+      tab2p_text <- NULL
+      for (cancer in cancers_sort) {
+        genes2show <- unique(c(SMGs[[cancer]], driver_genes$Gene[driver_genes$Cancer == ifelse(cancer == "CO", "COADREAD", cancer)]))
+        tab2p_text2add <- tab2p[tab2p$pair %in% head(tab2p$pair[tab2p$regulated & tab2p$Cancer == cancer & (tab2p$GENE %in% genes2show & tab2p$SUB_GENE %in% sub_genes2pathways$SUB_GENE) ], n = 6) & tab2p$Cancer == cancer,]
+        if (nrow(tab2p_text2add) == 0) {
+          tab2p_text2add <- tab2p[tab2p$pair %in% head(tab2p$pair[tab2p$regulated & tab2p$Cancer == cancer & (tab2p$GENE %in% genes2show | tab2p$SUB_GENE %in% genes2show) ], n = 6) & tab2p$Cancer == cancer,]
+          
+        }
+        tab2p_text <- rbind(tab2p_text, tab2p_text2add)
+      }
+      
+      for (text_cutoff in c(-log10(fdr_thres[enzyme_type]))) {
         subdir2 <- paste0(subdir1, "textcutoff", text_cutoff, "/")
         dir.create(subdir2)
         p = ggplot()
@@ -65,6 +77,7 @@ for (reg_nonNA in reg_nonNA2test) {
                            stroke = 0, alpha = 0.3, shape = 16, size = 2)
         p = p + geom_point(data = tab2p_unregulated, mapping = aes(x=coef_capped, y= y), 
                            stroke = 0, alpha = 0.1, shape = 16, size = 2, color = "grey")
+        p <- p + geom_text_repel(data = tab2p_text, mapping = aes(x=coef_capped, y = y, label = pair), force = 2, color = "black")
         p = p + geom_hline(yintercept = text_cutoff, color = 'grey', linetype = 2)
         p = p + geom_vline(xintercept = 0, color = 'grey', linetype = 2)
         p <- p + facet_grid(.~Cancer, scales = "fixed", space = "fixed")
@@ -73,7 +86,7 @@ for (reg_nonNA in reg_nonNA2test) {
         p = p + scale_fill_manual(values = color_cancers2)
         p = p + theme(axis.title = element_text(size=10), axis.text.x = element_text(colour="black", size=6,angle=90, vjust=0.5), axis.text.y = element_text(colour="black", size=10))#element_text(colour="black", size=14))
         p = p + theme(strip.text.x = element_text(size = 20, face = "bold")) # panel.spacing.x=unit(0, "lines"), 
-        p = p + labs(x = paste0("Coefficient for ", enzyme_type, " phosphorylation level"), y="-log10(FDR)")
+        p = p + labs(x = paste0("standardized coefficient for ", enzyme_type, " phosphorylation level"), y="-log10(FDR)")
         p
         # fn = paste(subdir2, "volcano_trans_uniq_", cancer, "_", enzyme_type, '_substrate_cap', cap, '.pdf',sep ="")
         fn = paste(subdir2, "volcano_", cptac_phase2process, "_", self, "_", enzyme_type, '_substrate_cap', cap, '_reg_nonNA', reg_nonNA, '.jpeg',sep ="")
@@ -94,11 +107,22 @@ for (reg_nonNA in reg_nonNA2test) {
       tab2p$y[tab2p$y > cap] <- cap
       tab2p$y[tab2p$y < (-cap)] <- -cap
       tab2p <- tab2p[order(tab2p$log_FDR, decreasing = T),]
-      tab2p_text <- tab2p[tab2p$pair %in% head(tab2p$pair[order(tab2p$log_FDR, decreasing = T)], n = 1),]
-      # driver_genes <- loadGeneList(gene_type = "driver", cancer = cancer, is.soft.limit = "soft.limit")
-      # tab2p_text <- tab2p[tab2p$pair %in% head(tab2p$pair[tab2p$GENE %in% driver_genes], n = 1),]
-      tab2p_text$text <- paste0(tab2p_text$pair, "(", tab2p_text$Cancer, ")")
       tab2p$Cancer <- factor(tab2p$Cancer, levels = cancers2process)
+      
+      sub_genes2pathways <- map2TCGApathwaways(gene_list = unique(tab2p$SUB_GENE), pathway_list = tcga_pathways_pluskegg_and_pathway)
+      sub_genes2pathways <- data.frame(SUB_GENE = rep(x = names(sub_genes2pathways), sapply(X = sub_genes2pathways, FUN = function(x) length(x))), 
+                                       SUB_GENE.path = unlist(sub_genes2pathways, use.names = F))
+      
+      tab2p_text <- NULL
+      for (cancer in cancers_sort) {
+        genes2show <- unique(c(SMGs[[cancer]], driver_genes$Gene[driver_genes$Cancer == ifelse(cancer == "CO", "COADREAD", cancer)]))
+        tab2p_text2add <- tab2p[tab2p$pair %in% head(tab2p$pair[tab2p$regulated & tab2p$Cancer == cancer & (tab2p$GENE %in% genes2show) ], n = 6) & tab2p$Cancer == cancer,]
+        if (nrow(tab2p_text2add) == 0) {
+          tab2p_text2add <- tab2p[tab2p$pair %in% head(tab2p$pair[tab2p$regulated & tab2p$Cancer == cancer & (tab2p$GENE %in% sub_genes2pathways$SUB_GENE) ], n = 6) & tab2p$Cancer == cancer,]
+        }
+        tab2p_text <- rbind(tab2p_text, tab2p_text2add)
+      }
+      
       
       
       for (text_cutoff in c(-log10(fdr_pk))) {
@@ -109,6 +133,7 @@ for (reg_nonNA in reg_nonNA2test) {
                            stroke = 0, alpha = 0.3, shape = 16, size = 2)
         p = p + geom_point(data = tab2p[!(tab2p$regulated),], mapping = aes(x=coef_capped, y= y), 
                            stroke = 0, alpha = 0.1, shape = 16, size = 2, color = "grey")
+        p <- p + geom_text_repel(data = tab2p_text, mapping = aes(x=coef_capped, y = y, label = pair), force = 2, color = "black")
         p = p + geom_hline(yintercept = text_cutoff, color = 'grey', linetype = 2)
         p = p + geom_vline(xintercept = 0, color = 'grey', linetype = 2)
         p <- p + facet_grid(.~Cancer, scales = "fixed", space = "fixed")
@@ -117,7 +142,7 @@ for (reg_nonNA in reg_nonNA2test) {
         p = p + scale_fill_manual(values = color_cancers2)
         p = p + theme(axis.title = element_text(size=10), axis.text.x = element_text(colour="black", size=6,angle=90, vjust=0.5), axis.text.y = element_text(colour="black", size=10))#element_text(colour="black", size=14))
         p = p + theme(strip.text.x = element_text(size = 20, face = "bold")) #panel.spacing.x=unit(0, "lines"), 
-        p = p + labs(x = paste0("Coefficient for ", enzyme_type, " phosphorylation level"), y="-log10(FDR)")
+        p = p + labs(x = paste0("standardized coefficient for ", enzyme_type, " protein level"), y="-log10(FDR)")
         p
         # fn = paste(subdir2, "volcano_trans_uniq_", cancer, "_", enzyme_type, '_substrate_cap', cap, '.pdf',sep ="")
         fn = paste(subdir2, "volcano_", cptac_phase2process, "_", self, "_", enzyme_type, '_substrate_cap', cap,'_reg_nonNA', reg_nonNA, '.jpeg',sep ="")

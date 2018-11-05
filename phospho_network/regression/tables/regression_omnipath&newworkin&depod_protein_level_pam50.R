@@ -427,7 +427,7 @@ for (sample_type in c("tumor")) {
     name = c("pro_kin","pro_sub","pho_kin")
     
     ## adjust p-values to FDR
-    for (cancer in cancers_sort) {
+    for (cancer in unique(table_subtypes$Cancer)) {
       for (subtype in subtypes) {
         for(self in c(TRUE,FALSE)) {
           for(coln in name) {#adjust pvalues for each variable

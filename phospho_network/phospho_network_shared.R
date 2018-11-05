@@ -260,6 +260,7 @@ load_ks_table <- function(protein) {
   if ( protein == "kinase" ) {
     ### read in the kinase/substrate table/ phosphorylation data ###
     k_s_table = read.delim(paste(pan3can_shared_dataD,"Phospho_databases/PhosphositePlus/data/Kinase_Substrate_Dataset_human_final_hugoified.txt",sep=""))
+    # k_s_table = read_table2(paste0(pan3can_shared_dataD,"Phospho_databases/PhosphositePlus/Aug_01_2018/Kinase_Substrate_Dataset"),  skip = 3)
   }
   
   if ( protein == "phosphatase" ) {

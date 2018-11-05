@@ -78,7 +78,7 @@ gene_count
 
 ## adding DNA repair pathway, spliceosome, ubiquitination, metabolic pathways
 keggs2add <- NULL
-keys2add <- c("Mismatch repair", "Spliceosome", "Ubiquitin mediated proteolysis")
+keys2add <- c("Mismatch repair", "Spliceosome", "MAPK")
 for (key in keys2add) {
   tmp <- all_keggs[grepl(key, all_keggs, ignore.case = T)]
   keggs2add <- c(keggs2add, tmp)
@@ -88,9 +88,9 @@ tcga_pathways_pluskegg_and_pathway <- tcga_pathways_pluskegg
 for (pathway_name in keys2add) {
   tcga_pathways_pluskegg_and_pathway[[pathway_name]] <- data.frame(Gene = KEGG[[keggs2add[pathway_name]]])
 }
-
+tcga_pathways_pluskegg_and_pathway[["MAPK"]] <- data.frame(Gene = c("MAP3K5", "MAP3K8", "BRAF", "ARAF", "RAF1", "MAP2K1", "MAP2K2", "MAP2K4", "MAP3K1", "MAPK1", "MAPK3", "MAPK9", "MAPK14", "MAPK13"))
 # set color for each pathway ---------------------------------------------
 # tcga_path_colors <- c(brewer.pal(n = length(pathway_names), name = "Dark2"), brewer.pal(n = length(pathway_names), name = "Set1"))
 # tcga_path_colors <- tcga_path_colors[1:length(pathway_names)]
-tcga_path_colors <- c("#fb9a99", "#1f78b4", "#b2df8a", "#33a02c", "#a6cee3", "#e31a1c", "#fdbf6f", "#ff7f00", "#b15928", "#6a3d9a", "black", "grey", "#c51b7d", "#8c510a", "#01665e")
-names(tcga_path_colors) <- c(pathway_names, "NA", "NAgrey", keys2add)
+tcga_path_colors <- c("#fb9a99", "#1f78b4", "#b2df8a", "#33a02c", "#a6cee3", "#e31a1c", "#fdbf6f", "#ff7f00", "#b15928", "#6a3d9a", "black", "grey", "#c51b7d", "#8c510a", "#01665e", "#c51b7d")
+names(tcga_path_colors) <- c(pathway_names, "NA", "NAgrey", keys2add, "driver")

@@ -50,6 +50,8 @@ names(fpkm_files) <- cancers_sort
 
 
 # gene lists --------------------------------------------------------------
+cancer_full_names <- c("Breast Cancer", "Ovarian Cancer", "Colorectal Cancer"); names(cancer_full_names) <- cancers_sort
+
 ## SMGs
 SMGs <- list()
 
@@ -57,13 +59,15 @@ SMGs[["BRCA"]] <- c("PIK3CA", "TP53", "MAP3K1", "MAP2K4", "GATA3", "MLL3", "CDH1
 
 SMGs[["OV"]] <- c("TP53", "NF1", "BRCA1", "BRCA2", "RB1", "CDK12")
 
-SMGs[["CO"]] <- c("APC", "TP53", "KRAS", "PIK3CA", "FBXW7", "SMAD4", "TCF7L2", "NRAS", "BRAF")
+SMGs[["CO"]] <- unique(c("APC", "TP53", "KRAS", "PIK3CA", "FBXW7", "SMAD4", "TCF7L2", "NRAS", "BRAF", "CTNNB1", "SMAD2", "FAM123B", "SOX9", "ATM", "ARID1A", "ACVR2A", "APC", "TGFBR2", "MSH3", "MSH6", "SLC9A9", "TCF7L2"))
+
+SMGs[["UCEC"]] <- c("POLE", "PTEN", "PIK3R1", "PIK3CA", "FBXW7", "KRAS", "CTNNB1", "PPP2R1A", "TP53", "ARID5B", "RPL22")
 
 ## significant SCNA
 CNAs <- list()
-cancer_synonyms <- c("BRCA", "OV", "CRC", "All_cancer")
-names(cancer_synonyms) <- c(cancers_sort, "PANCAN")
-for (cancer in c(cancers_sort, "PANCAN")) {
+cancer_synonyms <- c("BRCA", "OV", "CRC", "All_cancer", "UCEC")
+names(cancer_synonyms) <- c(cancers_sort, "PANCAN", "UCEC")
+for (cancer in names(cancer_synonyms)) {
   CNAs[[cancer]] <- list()
   for (cna_type in c("amplification", "deletion")) {
     if (cancer == "PANCAN") {
@@ -119,7 +123,12 @@ loadSampMap <- function() {
 }
 
 loadMaf <- function(cancer, maf_files) {
-  maf <- fread(input = paste0("./Ding_Lab/Projects_Current/CPTAC/CPTAC_Prospective_Samples/Somatic/", maf_files[grepl(x = maf_files, pattern = cancer)]), data.table = F)
+  if (cancer %in% c("BRCA", "OV", "CO")) {
+    maf <- fread(input = paste0("./Ding_Lab/Projects_Current/CPTAC/CPTAC_Prospective_Samples/Somatic/", maf_files[grepl(x = maf_files, pattern = cancer)]), data.table = F)
+  } else if (cancer %in% c("UCEC")) {
+    maf <- read_delim("Ding_Lab/Projects_Current/CPTAC/CPTACIII/UCEC_AWG/UCEC_shared_data/Somatic/UCEC.Somatic.WXS.v072518.b38.maf", 
+                      "\t", escape_double = FALSE, trim_ws = TRUE)
+  }
   return(maf)
 }
 

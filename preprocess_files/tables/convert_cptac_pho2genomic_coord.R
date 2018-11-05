@@ -31,7 +31,7 @@ ensembl37 = useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset="hsapiens_gene_ens
 # gather all phosphosites -------------------------------------------------
 pho_head_cancers <- NULL
 for (cancer in c("BRCA", "OV", "CO", "UCEC", "CCRCC")) {
-  pho <- fread(paste0(inputD, cancer, "/", prefix[cancer], "_", "PHO", "_formatted.txt"),
+  pho <- fread(paste0(cptac_sharedD, cancer, "/", prefix[cancer], "_", "PHO", "_formatted.txt"),
                data.table = F)
   pho_head <- formatPhosphosite(phosphosite_vector = as.vector(pho$Phosphosite), gene_vector = as.vector(pho$Gene))
   pho_head_cancers <- rbind(pho_head_cancers, pho_head)
