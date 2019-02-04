@@ -1,0 +1,300 @@
+---
+title: "subtype enrichment of outlier ks pairs"
+output: html_document
+---
+
+## source
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+baseD = "/Users/yigewu/Box\ Sync/"
+wd <- getwd()
+if (wd != baseD) {
+  setwd(baseD)
+}
+source('~/Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R')
+ppnD <- "~/Box Sync/cptac2p/analysis_results/phospho_network/"
+library(dplyr)
+## the least number of samples being a subtype and having outlier kinaase-substrate pair score
+num_is.outlier_is.subtype <- 4
+```
+
+## inputs
+``` {r input-fisher-tble}
+fisher_stat_cancers <- fread(input = paste0(ppnD,"es_score/table/calculate_es_pair_score/fisher_stat_tab_outlier1.5SD_all_cancers_kinase_reg_nonNA20.txt"), data.table = F)
+```
+
+``` {r filter-fisher-table}
+fisher_stat_cancers %>% nrow()
+fisher_stat_cancers2write <- fisher_stat_cancers[fisher_stat_cancers$fdr < 0.1 & fisher_stat_cancers$num_is.outlier_is.subtype >= num_is.outlier_is.subtype,]
+
+fisher_stat_cancers2write %>%
+  nrow()
+
+fisher_stat_cancers2write %>%
+  filter(fdr < 0.05) %>%
+  nrow()
+
+fisher_stat_cancers2write <- fisher_stat_cancers2write %>%
+  arrange(p.value)
+```
+
+``` {r basal-statistical-significant}
+subtype = "Basal"
+
+fisher_stat_cancers2write %>%
+  filter(subtype == "Basal", GENE == "CDK1", fdr < 0.1) %>%
+  nrow()
+
+fisher_stat_cancers2write %>%
+  filter(subtype == "Basal", GENE == "CDK1", fdr < 0.05) %>%
+  nrow()
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype, GENE == "CDK1") %>%
+  select(SUB_GENE) %>%
+  table()
+
+substrates2test <- fisher_stat_cancers2write %>%
+  filter(subtype == subtype, GENE == "CDK1") %>%
+  select(SUB_GENE)
+
+write.table(x = substrates2test, file = "./Basal_CDK1_substrates.txt", quote = F, col.names = F, row.names = F)
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype, GENE == "CDK1", fdr < 0.05) %>%
+  select(SUB_GENE) %>%
+  table()
+
+## cell cycle
+
+## DNA replication
+## ubiqitin mediated proteolysis targeting CDK1
+## DNMT1
+fisher_stat_cancers %>%
+  filter(SUB_GENE == "DNMT1" & subtype == "Basal", p.value < 0.05)
+## presentable
+
+## PPP1CA
+fisher_stat_cancers %>%
+  filter(SUB_GENE == "PPP1CA" & subtype == "Basal", p.value < 0.05)
+## not specific to basal
+
+## SRC: not clear
+
+fisher_stat_cancers2write %>%
+  filter(subtype == "Basal", fdr < 0.1, GENE != "CDK1")
+## cis:TTK, MASTL, VRK1, SRPK1
+
+## trans: PRKCB:STMN1:S38, MAPK1:SOX10:S24, TTK:BUB1B:S543
+```
+
+``` {r basal-biology-spotchecks}
+subtype = "Basal"
+
+## TP53 already covered
+fisher_stat_cancers2write %>%
+  filter(SUB_GENE == "TP53", p.value < 0.05)
+## CDK9 not clear
+
+## RB1
+fisher_stat_cancers %>%
+  filter(SUB_GENE == "RB1" & subtype == "Basal", p.value < 0.05)
+## S807
+
+## MYC
+fisher_stat_cancers %>%
+  filter(SUB_GENE == "MYC" & subtype == "Basal", p.value < 0.05)
+## not clear
+
+## TP53BP1
+fisher_stat_cancers %>%
+  filter(SUB_GENE == "TP53BP1" & subtype == "Basal", p.value < 0.05)
+## good
+
+## RAF1: RAF1_RAF1_S29 good
+## CSNK1A1:AXIN1:S77: not good
+## ATR:MCM2:S108: good
+```
+
+
+``` {r LumB-statistical-significant}
+subtype2test <- "LumB"
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.05) %>%
+  nrow()
+## only 1 events for luminal B passed FDR < 0.05
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.1)
+## 3 events passed FDR < 0.1
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.1) %>%
+  select(pair)
+# DYRK1A:CCND1:T286				
+# CDK9:NCOA2:S493				
+# CDK9:CDK9:T354
+## they all don't look specific to luminal B
+
+```
+
+``` {r LumB-biology-spotcheck}
+subtype2test <- "LumB"
+
+fisher_stat_cancers %>%
+  filter(subtype == subtype2test & num_is.outlier_is.subtype >= 4 & p.value < 0.05 & GENE %in% unlist(SMGs)) %>%
+  arrange(-num_is.outlier_is.subtype)
+# BRAF	BRAF	T401	cis	BRAF:BRAF:T401	BRAF.T401	0.02072966	1.383029	Inf	4
+## not good
+
+fisher_stat_cancers %>%
+  filter(subtype == subtype2test & num_is.outlier_is.subtype >= 4 & p.value < 0.05) %>%
+  arrange(-num_is.outlier_is.subtype)
+
+```
+
+``` {r LumA-statistical-significant}
+subtype2test <- "LumA"
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test & num_is.outlier_is.subtype >= 4) %>%
+  nrow
+## 11 events passed FDR < 0.1
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test) %>%
+  select(pair)
+# PRKAA1:LIPE:S855 not good				
+# PRKAA1:HDAC7:S360		not good			
+# GSK3A:MAPT:S721	not good			
+# GSK3B:MAPT:S721				bad
+# MAPK9:JUN:S63		ok		
+# MAPK9:NFATC4:S280				not good
+# PRKAB1:PRKAB1:S108				
+# GSK3B:MAPT:S393				
+# PDPK1:PDPK1:S241				ok
+# GSK3B:MAPT:S525
+```
+
+``` {r LumA-biology-relevant}
+fisher_stat_cancers %>%
+  filter(subtype == subtype2test & num_is.outlier_is.subtype >= 4 & p.value < 0.05 & GENE %in% unlist(SMGs)) %>%
+  arrange(-num_is.outlier_is.subtype)
+# MAP2K4	MAP2K4	S268	cis	MAP2K4:MAP2K4:S268	MAP2K4.S268	0.008971137	1.658460	Inf	8	
+# MAP2K4	MAPK8	S301	trans	MAP2K4:MAPK8:S301	MAPK8.S301	0.035270594	1.135101	Inf	6	
+# MAP2K4	MAP2K4	S101	cis	MAP2K4:MAP2K4:S101	MAP2K4.S101	0.023179788	1.377153	Inf	5	
+# MAP2K4	MAPK8	Y185	trans	MAP2K4:MAPK8:Y185	MAPK8.Y185	0.015945748	1.592778	Inf	5	
+# MAP2K4	MAPK9	Y185	trans	MAP2K4:MAPK9:Y185	MAPK9.Y185	0.016106924	1.577859	Inf	5	
+```
+
+``` {r POLE-statistical-significant}
+subtype2test <- "POLE"
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.05) %>%
+  nrow()
+## nothing
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.1) %>%
+  nrow
+## nothing
+
+fisher_stat_cancers %>%
+  filter(subtype == subtype2test, p.value < 0.05, num_is.outlier_is.subtype >= 4) %>%
+  nrow
+## 1
+
+fisher_stat_cancers %>%
+  filter(subtype == subtype2test, p.value < 0.05, num_is.outlier_is.subtype >= 4)
+# PRKAA2:TSC2:S1387
+## not look good
+```
+
+``` {r Serous-statistical-significant}
+subtype2test <- "Serous"
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.05) %>%
+  nrow()
+## 8
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.05, num_is.outlier_is.subtype >= 4 )
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.05, num_is.outlier_is.subtype >= 4 ) %>%
+  select(pair)
+# PLK1:RSF1:S1359	: not good			
+# ERBB2:ERBB2:S1083				
+# PAK2:PAK2:S197				
+# PAK2:PAK2:S58				
+# PKN1:PKN1:S922				
+# PAK2:PAK2:S141				
+# ERBB2:ERBB2:T1166				
+# PAK2:PAK2:T169
+
+fisher_stat_cancers %>%
+  filter(subtype == subtype2test, p.value < 0.05, num_is.outlier_is.subtype >= 4 ) %>%
+  arrange(-num_is.outlier_is.subtype)
+
+```
+
+``` {r MSI-statistical-significant}
+subtype2test <- "MSI-H"
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test) %>%
+  nrow()
+## 2
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test)
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.05, num_is.outlier_is.subtype >= 4 )
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.05, num_is.outlier_is.subtype >= 4 ) %>%
+  select(pair)
+# PLK1:RSF1:S1359	: not good			
+# ERBB2:ERBB2:S1083				
+# PAK2:PAK2:S197				
+# PAK2:PAK2:S58				
+# PKN1:PKN1:S922				
+# PAK2:PAK2:S141				
+# ERBB2:ERBB2:T1166				
+# PAK2:PAK2:T169
+
+fisher_stat_cancers %>%
+  filter(subtype == subtype2test, p.value < 0.05, num_is.outlier_is.subtype >= 4 ) %>%
+  arrange(-num_is.outlier_is.subtype)
+
+```
+
+``` {r Endometroid-statistical-significant}
+subtype2test <- "Endometrioid"
+
+fisher_stat_cancers %>%
+  filter(subtype == subtype2test, p.value < 0.05, num_is.outlier_is.subtype >= 4 ) %>%
+  arrange(-num_is.outlier_is.subtype)
+
+```
+
+
+
+``` {r LumB-biology-spotcheck}
+subtype2test <- "LumB"
+
+fisher_stat_cancers %>%
+  filter(subtype == subtype2test & num_is.outlier_is.subtype >= 4 & p.value < 0.05 & GENE %in% unlist(SMGs)) %>%
+  arrange(-num_is.outlier_is.subtype)
+# BRAF	BRAF	T401	cis	BRAF:BRAF:T401	BRAF.T401	0.02072966	1.383029	Inf	4
+## not good
+
+fisher_stat_cancers %>%
+  filter(subtype == subtype2test & num_is.outlier_is.subtype >= 4 & p.value < 0.05) %>%
+  arrange(-num_is.outlier_is.subtype)
+
+```

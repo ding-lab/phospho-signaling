@@ -1,8 +1,6 @@
 # Yige Wu @ WashU 2018 Nov
 # parse complex information from corum, signor and reactome paired gene table
 
-
-
 # source ------------------------------------------------------------------
 source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R')
 
@@ -21,10 +19,13 @@ corum_complex_pair_uniq <- corum_complex_pair_tab[!duplicated(corum_complex_pair
 # Business  ---------------------------------------------------------------
 ## rbind
 sup_complex_pair_uniq <- unique(rbind(corum_complex_pair_uniq, signor_complex_pair_uniq))
-sup_complex_pair2add <- data.frame(geneA = c("TP53", "TP53", "TP53", "TP53", "TP53", "TP53", "TP53", "TP53", "TP53", "TP53", "TP53"), geneB = c("TP53BP1", "CREBBP", "KAT5", "SIRT1", "BAX", "PUMA", "NOXA", "CDKN1A", "SLC7A11", "GLS2", "TIGAR"))
+TP53_target_genes <- c("TP53BP1", "CREBBP", "KAT5", "SIRT1", "BAX", "PUMA", "NOXA", "CDKN1A", "SLC7A11", "GLS2", "TIGAR", "DRAM1", "FOXR2", "LIF", "THBS1", "ICAM1", "SCO2", "SERPINE1")
+sup_complex_pair2add <- data.frame(geneA = rep("TP53", length(TP53_target_genes)), 
+                                   geneB = TP53_target_genes)
 sup_complex_pair2addrev <- data.frame(geneA = sup_complex_pair2add$geneB, geneB = sup_complex_pair2add$geneA)
 sup_complex_pair2add <- rbind(sup_complex_pair2add, sup_complex_pair2addrev)
 sup_complex_pair2add$pair_pro <- paste0(sup_complex_pair2add$geneA, ":", sup_complex_pair2add$geneB)
-sup_complex_pair_uniq <- unique(rbind(sup_complex_pair_uniq, sup_complex_pair2add))
+sup_complex_pair_uniq <- unique(rbind(sup_complex_pair2add, sup_complex_pair_uniq))
+sup_complex_pair_uniq <- rbind(sup_complex_pair_uniq[sup_complex_pair_uniq$geneA == "TP53",], sup_complex_pair_uniq[sup_complex_pair_uniq$geneA != "TP53",])
 nrow(sup_complex_pair_uniq)
 write.table(x = sup_complex_pair_uniq, file = paste0(makeOutDir(resultD = resultD), "sup_complex_pair_uniq.txt"), quote = F, sep = "\t", row.names = F)

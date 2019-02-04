@@ -90,42 +90,59 @@ for (cancer in "UCEC") {
   subdir2 <- paste0(subdir1, cancer, "/")
   dir.create(subdir2)
   
-  maf <- loadMaf(cancer = cancer, maf_files = maf_files)
+  # maf <- loadMaf(cancer = cancer, maf_files = maf_files)
+  maf <- fread(input = "./Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/Baylor_DataFreeze_V2/UCEC_somatic_mutation_site_level_V2.0.maf", data.table = F)
+  
   ## input somatic mutation matrix
   # mut_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_mutation_matrix_UCEC/", cancer, "_somatic_mutation_in_enzyme_substrate.txt"), data.table = F)
   mut_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_mutation_matrix_for_signor_complex_UCEC/", cancer, "_somatic_mutation_in_complex.txt"), data.table = F)
   
   mut_cnv_tab <- mut_cnv_cans[mut_cnv_cans$p < 0.3,]
+  # mut_cnv_tab <- mut_cnv_cans
   # tab_mut <- mut_cnv_tab[mut_cnv_tab$SUB_GENE %in% c("BAD", "GSK3B", "PIK3R1", "CTNNB1", "MAP2K1", "MAPK1", "AKT1", "APC") & mut_cnv_tab$GENE %in% c("AKT1", "PIK3CA", "APC", "MAP3K1", "CTNNB1"),]
   
   for (self in c( "trans")) {
-    # tab_mut <- mut_cnv_tab[mut_cnv_tab$SUB_GENE %in% c("APC") & mut_cnv_tab$GENE %in% c("CTNNB1") & mut_cnv_tab$SELF == self,]
+    # tab_mut <- mut_cnv_tab[mut_cnv_tab$geneA %in% c("CTNNB1") & mut_cnv_tab$geneB %in% c("APC"),]
     # tab_mut <- mut_cnv_tab[mut_cnv_tab$SUB_GENE %in% c("TP53BP1") & mut_cnv_tab$GENE %in% c("TP53") & mut_cnv_tab$SELF == self,]
     # tab_mut <- mut_cnv_tab[mut_cnv_tab$geneB %in% c("TP53BP1") & mut_cnv_tab$geneA %in% c("TP53"),]
-    tab_mut <- mut_cnv_tab[ mut_cnv_tab$geneA %in% c("STAT1"),]
+    tab_mut <- mut_cnv_tab[(mut_cnv_tab$geneA == "TP53" & mut_cnv_tab$geneB == "TP53BP1" & mut_cnv_tab$SUB_MOD_RSD == "S1763") | (mut_cnv_tab$geneA == "CTNNB1" & mut_cnv_tab$geneB == "APC" & mut_cnv_tab$SUB_MOD_RSD == "S2106") | (mut_cnv_tab$geneA == "CTNNB1" & mut_cnv_tab$geneB == "APC" & mut_cnv_tab$SUB_MOD_RSD == "S2278"),]
     
     ## input protein and phosphorylation data
-    pro_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/UCEC_V1/UCEC_proteomics_V1.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
+    # pro_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/UCEC_V1/UCEC_proteomics_V1.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
+    # pho_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/UCEC_V1/UCEC_phosphoproteomics_site_level_V1.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
+    # phog_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/UCEC_V1/UCEC_phosphoproteomics_gene_level_V1.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
+    
+    pro_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/Baylor_DataFreeze_V2/UCEC_proteomics_PNNL_ratio_median_polishing_log2_V2.0.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
+    pho_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/Baylor_DataFreeze_V2/UCEC_phosphoproteomics_PNNL_ratio_median_polishing_site_level_log2_V2.0.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
+    phog_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/Baylor_DataFreeze_V2/UCEC_phosphoproteomics_PNNL_ratio_median_polishing_gene_level_log2_V2.0.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
+    
     pro_data <- data.frame(pro_data)
     colnames(pro_data)[1] <- "Gene"
-    
-    pho_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/UCEC_V1/UCEC_phosphoproteomics_site_level_V1.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
     pho_data <- data.frame(pho_data)
-    
-    phog_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/UCEC_V1/UCEC_phosphoproteomics_gene_level_V1.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
     phog_data <- data.frame(phog_data)
     colnames(phog_data)[1] <- "Gene"
 
     pho_head <- data.frame(str_split_fixed(string = pho_data$idx, pattern = "-", n = 2))
     colnames(pho_head) <- c("SUBSTRATE", "SUB_MOD_RSD")
     
-    samples <- colnames(pro_data)[!(colnames(pro_data) %in% c("idx")) & !grepl(pattern = "Mix", x = (colnames(pro_data)))  & !grepl(pattern = "rep", x = (colnames(pro_data)))]
-    samples_T <- samples[grepl(pattern = paste0('\\.', toupper(substr(x = "tumor", start = 1, stop = 1))), x = samples)]
-    samples_N <- samples[grepl(pattern = paste0('\\.', toupper(substr(x = "normal", start = 1, stop = 1))), x = samples)]
+    ## input meta table and transform the ids
+    meta_tab <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/Baylor_DataFreeze_V2/UCEC_CPTAC3_meta_table_v2.0.txt", 
+                           "\t", escape_double = FALSE, trim_ws = TRUE)
+    meta_tab <- data.frame(meta_tab)
+    rownames(meta_tab) <- as.vector(meta_tab$idx)
+    
+    samples <- colnames(pro_data)[!(colnames(pro_data) %in% c("Gene")) & !(colnames(pro_data) %in% c("idx")) & !grepl(pattern = "Mix", x = (colnames(pro_data)))  & !grepl(pattern = "rep", x = (colnames(pro_data)))]
+    samples <- samples[!(grepl(pattern = "rep", x = meta_tab[samples, "Proteomics_Participant_ID"])) & !(meta_tab[samples, "Proteomics_Participant_ID"] %in% c("C3L-00084", "C3L-01284", "C3N-01001"))]
+    # samples_T <- samples[grepl(pattern = paste0('\\.', toupper(substr(x = "tumor", start = 1, stop = 1))), x = samples)]
+    # samples_N <- samples[grepl(pattern = paste0('\\.', toupper(substr(x = "normal", start = 1, stop = 1))), x = samples)]
+    samples_T <- samples[meta_tab[samples, "Proteomics_Tumor_Normal"] == "Tumor"]
+    samples_N <- samples[meta_tab[samples, "Proteomics_Tumor_Normal"] == "Adjacent_normal"]
     samples <- c(samples_T, samples_N)
     sampIDs <- samples
-    tmp <- str_split_fixed(string = samples, pattern = "\\.", n = 3)
-    partIDs <- paste0(tmp[,1], "-", tmp[,2])
+    # tmp <- str_split_fixed(string = samples, pattern = "\\.", n = 3)
+    
+    # partIDs <- paste0(tmp[,1], "-", tmp[,2])
+    partIDs <- as.vector(meta_tab[sampIDs, "Proteomics_Participant_ID"])
     names(partIDs) <- samples
     print(length(partIDs))
     # pho_data <- pho_data[, sampIDs]
@@ -290,13 +307,45 @@ for (cancer in "UCEC") {
                                                                                                quantile(x = tab2p$y, probs = 0.9, na.rm = T), quantile(x = tab2p$y, probs = 0.1, na.rm = T),
                                                                                                quantile(x = tab2p$y, probs = 0.75, na.rm = T), quantile(x = tab2p$y, probs = 0.25, na.rm = T)))
         p
-        # fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_pho_sub.pdf")
-        # ggsave(file=fn, height=7, width = 8, useDingbats=FALSE)
+        fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_pho_sub.pdf")
+        ggsave(file=fn, height=7, width = 8, useDingbats=FALSE)
         
         fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_pho_sub.png")
         ggsave(file=fn, height=7, width = 8, device = png())
         dev.off()
         
+        pos <- position_jitter(width = 0.5, seed = 1)
+        tab2p <- tab2p[tab2p$x != "normal",]
+        p = ggplot(tab2p, aes(x=x, y=y))
+        p = p + geom_boxplot(aes(fill = x), alpha = 0.8)
+        p = p + geom_point(aes(shape = x), position = pos, stroke = 0, alpha = 1, size = 2)
+        p = p + scale_x_discrete(breaks = c("enzyme_mutation", "enzyme_deep_amplification", "enzyme_deep_deletion", "enzyme_shallow_amplification", "enzyme_shallow_deletion", "control", "normal"),
+                                 label = c(paste0(enzyme, "_mutated\n",  "tumors"),
+                                           paste0(enzyme, "_deep_amplification"), paste0(enzyme, "_deep_deletion"),
+                                           paste0(enzyme, "_shallow_amplification"), paste0(enzyme, "_shallow_deletion"),
+                                           "control\ntumor", "adjacent\nnormal"))
+        p = p + labs(y=paste0(substrate, " ", rsd, " phosphorylation abundance(log2 ratio)"))
+        p = p + theme_nogrid()
+        p = p + theme(axis.title.x = element_blank(), axis.title.y = element_text(size = 15, face = "bold"),
+                      axis.text.x = element_text(size= 20, vjust=0.5, hjust = 0.5, face = "bold"),
+                      axis.text.y = element_text(colour="black", size=8))
+        p = p + theme(title = element_text(size = 18, face = "bold"))
+        p = p + ggtitle(label = paste0(enzyme, " mutational association with ", substrate, "_", rsd))
+        p = p + scale_fill_manual(values = c("enzyme_mutation" = set1[1],
+                                              "enzyme_deep_amplification" = set1[1], "enzyme_deep_deletion"  = set1[2],
+                                              "enzyme_shallow_amplification" = "#FB9A99", "enzyme_shallow_deletion"  = "#A6CEE3",
+                                              "control" = "purple",
+                                              "normal" = "grey50"))
+        p = p + stat_compare_means(comparisons = my_comparisons[sample_type2test], label.y = c(quantile(x = tab2p$y, probs = 0.99, na.rm = T),
+                                                                                               quantile(x = tab2p$y, probs = 0.9, na.rm = T), quantile(x = tab2p$y, probs = 0.1, na.rm = T),
+                                                                                               quantile(x = tab2p$y, probs = 0.75, na.rm = T), quantile(x = tab2p$y, probs = 0.25, na.rm = T)))
+        p
+        fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_pho_sub_box.pdf")
+        ggsave(file=fn, height=7, width = 8, useDingbats=FALSE)
+        
+        fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_pho_sub_box.png")
+        ggsave(file=fn, height=7, width = 8, device = png())
+        dev.off()
         
         tab2p$y <- as.vector(tab2p$pro_en)
         pos <- position_jitter(width = 0.5, seed = 1)
@@ -339,6 +388,9 @@ for (cancer in "UCEC") {
         fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_pro_enzyme.png")
         ggsave(file=fn, height=7, width = 8, device = png())
         dev.off()
+        fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_pro_enzyme.pdf")
+        ggsave(file=fn, height=7, width = 8, useDingbats=FALSE)
+        dev.off()
         
         tab2p$y <- as.vector(tab2p$pro_sub)
         pos <- position_jitter(width = 0.5, seed = 1)
@@ -380,6 +432,41 @@ for (cancer in "UCEC") {
         fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_pro_sub.png")
         ggsave(file=fn, height=7, width = 8, device = png())
         dev.off()
+        fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_pro_sub.pdf")
+        ggsave(file=fn, height=7, width = 8, useDingbats=FALSE)
+        dev.off()
+        
+        pos <- position_jitter(width = 0.5, seed = 1)
+        tab2p <- tab2p[tab2p$x != "normal",]
+        p = ggplot(tab2p, aes(x=x, y=y))
+        p = p + geom_boxplot(aes(fill = x), alpha = 0.8)
+        p = p + geom_point(aes(shape = x), position = pos, stroke = 0, alpha = 1, size = 2)
+        p = p + labs(y=paste0(substrate, " protein abundance(log2 ratio) in", cancer))
+        p = p + theme_nogrid()
+        p = p + theme(axis.title.x = element_blank(), axis.title.y = element_text(size = 15, face = "bold"),
+                      axis.text.x = element_text(size= 20, vjust=0.5, hjust = 0.5, face = "bold"),
+                      axis.text.y = element_text(colour="black", size=8))
+        p = p + scale_x_discrete(breaks = c("enzyme_mutation", "enzyme_deep_amplification", "enzyme_deep_deletion", "enzyme_shallow_amplification", "enzyme_shallow_deletion", "control", "normal"),
+                                 label = c(paste0(enzyme, "_mutated\n",  "tumors"),
+                                           paste0(enzyme, "_deep_amplification"), paste0(enzyme, "_deep_deletion"),
+                                           paste0(enzyme, "_shallow_amplification"), paste0(enzyme, "_shallow_deletion"),
+                                           "control\ntumor", "adjacent\nnormal"))
+        p = p + theme(title = element_text(size = 18, face = "bold"))
+        p = p + ggtitle(label = paste0(enzyme, " mutational association with ", substrate, " ", "protein"))
+        p = p + scale_color_manual(values = c("enzyme_mutation" = set1[1],
+                                              "enzyme_deep_amplification" = set1[1], "enzyme_deep_deletion"  = set1[2],
+                                              "enzyme_shallow_amplification" = "#FB9A99", "enzyme_shallow_deletion"  = "#A6CEE3",
+                                              "control" = "purple",
+                                              "normal" = "grey50"))
+        p = p + stat_compare_means(comparisons = my_comparisons[sample_type2test], label.y = c(quantile(x = tab2p$y, probs = 0.99, na.rm = T),
+                                                                                               quantile(x = tab2p$y, probs = 0.9, na.rm = T), quantile(x = tab2p$y, probs = 0.1, na.rm = T),
+                                                                                               quantile(x = tab2p$y, probs = 0.75, na.rm = T), quantile(x = tab2p$y, probs = 0.25, na.rm = T)))
+        p = p + stat_compare_means(label.y = max(tab2p$y, na.rm = T))     # Add global Anova p-value
+        p
+
+        fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_pro_sub_box.pdf")
+        ggsave(file=fn, height=7, width = 8, useDingbats=FALSE)
+        
         
         tab2p$y <- as.vector(tab2p$phog_en)
         pos <- position_jitter(width = 0.5, seed = 1)
@@ -422,6 +509,10 @@ for (cancer in "UCEC") {
         ggsave(file=fn, height=7, width = 8, device = png())
         dev.off()
         
+        fn = paste0(subdir5, enzyme, "_", substrate, "_", rsd, "_pho_enzyme.pdf")
+        ggsave(file=fn, height=7, width = 8, useDingbats=FALSE)
+        dev.off()
+
         # 
         # ## calculate the deviation of substrate phosphorylation of each sample comparied to the median of controls
         # tab2p$pho_sub_qt <- ecdf_fun(x = tab2p$pho_sub, perc = tab2p$pho_sub)

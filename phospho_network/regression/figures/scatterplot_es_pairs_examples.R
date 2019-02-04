@@ -8,247 +8,118 @@ source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_
 library(ggrepel)
 library(ggplot2)
 
-# variables ---------------------------------------------------------------
-cancers_sort <- c("BRCA", "OV", "CO")
-reg_sig <- 0.1
-color_cat_man <- c(colors['BRCA'], colors['OV'], colors['COAD'], "#bdbdbd"); names(color_cat_man) <- c("BRCA", "OV", "CO", "other")
-maf_files <- list.files(path = "./Ding_Lab/Projects_Current/CPTAC/CPTAC_Prospective_Samples/Somatic/")
 
-# inputs ------------------------------------------------------------------
-## input druggable gene list
-# drug_genes <- fread()
-color_direction <- c(set1[1], set1[2], "black")
-names(color_direction) <- c("up", "down", "NA")
-clinical <- fread(input = paste0(cptac_sharedD, "Specimen_Data_20161005_Yige_20180307.txt"), data.table = F)
-enzyme_type <- "phosphatase"
-sup_cans_tab_en <- fread(input = paste0("./cptac2p/analysis_results/phospho_network/regression/tables/regression_omnipath&newworkin&depod_protein_level/phosphatase_substrate_regression_cptac2p_3can_tumor.txt"), data.table = F)
-sup_cans_tab_en$pair <- paste0(sup_cans_tab_en$KINASE, ":", sup_cans_tab_en$SUBSTRATE, ":", sup_cans_tab_en$SUB_MOD_RSD)
-sup_cans_tab_en$pair_pro <- paste0(sup_cans_tab_en$KINASE, ":", sup_cans_tab_en$SUBSTRATE)
-sup_cans_tab_en$GENE <- as.vector(sup_cans_tab_en$KINASE)
-sup_cans_tab_en$SUB_GENE <- as.vector(sup_cans_tab_en$SUBSTRATE)
-sup_cans_tab_en <- markSigSiteCan(sup_cans_tab_en, sig_thres = reg_sig, enzyme_type = enzyme_type)
+# set variables -----------------------------------------------------------
+cancers2process <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
 
-sup_cans_tab <- sup_cans_tab_en
-## annotate kinase substrate regulation
-sup_cans_tab$regulated <- (sup_cans_tab$coef_sig & sup_cans_tab$fdr_sig)
-
-
-# plot shared -------------------------------------------------------------
-tmp <- sup_cans_tab
-tmp <- tmp[tmp$regulated & tmp$SELF == "trans",]
-tmp <- tmp[!is.na(tmp[, paste0("shared3can")]) & tmp[, paste0("shared3can")],]
-if (nrow(tmp) > 0) {
-  ## create output directory
-  outDir1 <- paste0(makeOutDir(resultD = resultD), paste0("shared3can"), "/")
-  dir.create(outDir1)
-  for (i in 1:nrow(tmp)) {
-    # for (i in c(1)) {
-    enzyme <- as.character(tmp[i, "GENE"])
-    substrate <- as.character(tmp[i, "SUB_GENE"])
-    # enzyme <- "PPP1CB"
-    # substrate <- "PRKCD"
-    
-    # for (gene in c("MAP2K4")) {
-    # for (rsd in c("S268")) {
-    for (rsd in unique(tmp$SUB_MOD_RSD[tmp$SUB_GENE == substrate])) {
-      sup_3can <- NULL
-      for (cancer2 in cancers_sort) {
-        ## input protein level
-        pro_data <- fread(input = paste(cptac_sharedD, cancer2,"/",prefix[cancer2], "_PRO_formatted_normalized_noControl.txt",sep=""), data.table = F)
-        pro_sub <- pro_data[pro_data$Gene == substrate,]
-        pro_kin <- pro_data[pro_data$Gene == enzyme,]
-        rm(pro_data)
-        ## input phospho level
-        pho_data <- fread(input = paste(cptac_sharedD, cancer2,"/",prefix[cancer2], "_PHO_formatted_normalized_noControl.txt",sep=""), data.table = F)
-        pho_data <- pho_data[pho_data$Gene == substrate,]
+pairs2plot <- c("PRKD1:CTNNB1:S191", "PAK4:CTNNB1:S191", "GSK3B:CTNNB1:S552")
+# bussiness ------------------------------------------------------------------
+for (pair in pairs2plot) {
+  geneA <- str_split(string = pair, pattern = ":")[[1]][1]
+  geneB <- str_split(string = pair, pattern = ":")[[1]][2]
+  phosphosite <- str_split(string = pair, pattern = ":")[[1]][3]
+  fn = paste0(makeOutDir(resultD = resultD), geneA, "_", geneB, "_", phosphosite, ".pdf")
+  
+  # for (cancer in c("BRCA")) {
+  if (!file.exists(fn)) {
+    sup_tab <- NULL
+    sup_tab %>% head()
+    for (cancer in cancers2process) {
+      
+      # input data first because different for each cancer type --------------------------------------------------------------
+      ## input protein data
+      if (cancer %in% c("BRCA", "OV", "CO")) {
+        pho_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PHO", sample_type = "tumor", pipeline_type = "CDAP", norm_type = "scaled")
+        phog_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "collapsed_PHO", sample_type = "tumor", pipeline_type = "CDAP", norm_type = "scaled")
         
-        ## input phospho level
-        phog_data <- fread(input = paste(cptac_sharedD, cancer2,"/",prefix[cancer2], "_collapsed_PHO_formatted_normalized_replicate_averaged_Tumor.txt",sep=""), data.table = F)
-        phog_data <- phog_data[phog_data$Gene == enzyme,]
+      } else if (cancer == "UCEC") {
+        pho_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PHO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "median_polishing")
+        phog_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "collapsed_PHO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "median_polishing")
         
-        if (nrow(pro_sub) > 0 & nrow(pho_data) > 0 & nrow(phog_data)) {
-          pho_head <- formatPhosphosite(phosphosite_vector = pho_data$Phosphosite, gene_vector = pho_data$Gene)
-          pho_data <- pho_data[pho_head$SUB_MOD_RSD == rsd,]
-          
-          if ( nrow(pho_data) > 0) {
-            pro.m <- melt(pro_sub)
-            colnames(pro.m)[ncol(pro.m)] <- "pro_sub"
-            
-            pro.m2 <- melt(pro_kin)
-            colnames(pro.m2)[ncol(pro.m2)] <- "pro_kin"
-            
-            pho.m <- melt(pho_data)
-            colnames(pho.m)[ncol(pho.m)] <- "pho_sub"
-            
-            phog.m <- melt(phog_data)
-            colnames(phog.m)[ncol(phog.m)] <- "pho_kin"
-            
-            sup_tab <- merge(pro.m[, c("variable", "pro_sub")], pho.m[, c("variable", "pho_sub")], all = T)
-            sup_tab <- merge(sup_tab, phog.m[, c("variable", "pho_kin")], all = T)
-            sup_tab <- merge(sup_tab, pro.m2[, c("variable", "pro_kin")], all = T)
-            sup_tab$partID <- sampID2partID(sampleID_vector = as.vector(sup_tab$variable), sample_map = clinical)
-            
-            ## input maf
-            maf <- fread(input = paste0("./Ding_Lab/Projects_Current/CPTAC/CPTAC_Prospective_Samples/Somatic/", maf_files[grepl(x = maf_files, pattern = cancer2)]), data.table = F)
-            maf <- maf[maf$Hugo_Symbol == enzyme & maf$Variant_Classification != "Silent",]
-            if (nrow(maf) > 0) {
-              maf$partID <- str_split_fixed(string = maf$Tumor_Sample_Barcode, pattern = "_", 2)[,1]
-              maf$aa_change <- paste0(maf$Hugo_Symbol, ":", maf$HGVSp_Short)
-              maf$is.upstream <- ifelse(maf$Hugo_Symbol == enzyme, TRUE, FALSE)
-              sup_tab <- merge(sup_tab, maf[, c("partID", "Variant_Classification", "aa_change", "is.upstream")], all.x = T) 
-            } else {
-              sup_tab$aa_change <- NA
-              sup_tab$is.upstream <- NA
-              sup_tab$Variant_Classification <- NA
-            }
-            sup_tab$cancer <- cancer2
-            sup_3can <- rbind(sup_3can, sup_tab)
-          }
+      } else if (cancer == "CCRCC") {
+        pho_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PHO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "MD_MAD")
+        phog_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "collapsed_PHO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "MD_MAD")
+        
+      } else if (cancer == "LIHC") {
+        pho_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PHO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "MD")
+        phog_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "collapsed_PHO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "MD")
+        
+      }
+      pro_tab <- pro_tab[pro_tab$Gene %in% c(geneB),]
+      
+      phog_tab <- phog_tab[phog_tab$Gene %in% c(geneA),]
+      pho_tab <- pho_tab[pho_tab$Gene == geneB & pho_tab$Phosphosite == phosphosite,]
+      
+      # make the annotation columns for each sample -----------------------------
+      partIDs <- colnames(pho_tab)[!(colnames(pho_tab) %in% c("Gene", "Phosphosite", "Peptide_ID"))]
+      col_anno <- data.frame(partID = partIDs)
+      
+      # make the matrix of values showing in heatmap ----------------------------
+      sup_tab_can <- col_anno
+      
+      if (nrow(pho_tab) > 0) {
+        pho_tab <- pho_tab[!(colnames(pho_tab) %in% c("Peptide_ID"))]
+        pho_tab.m <- melt(pho_tab, id.vars = c("Gene", "Phosphosite"))
+        pho_tab.m %>% head()
+        colnames(pho_tab.m) <- c("Gene", "Phosphosite", "partID", "pho_sub")
+        sup_tab_can <- merge(sup_tab_can, pho_tab.m[,c("partID", "pho_sub")], by = c("partID"), all.x = T)
+      }
+      
+      if (!is.null(phog_tab)) {
+        if (nrow(phog_tab) > 0) {
+          phog_tab.m <- melt(phog_tab, id.vars = "Gene")
+          phog_tab.m %>% head()
+          colnames(phog_tab.m) <- c("Gene", "partID", "pho_kin")
+          sup_tab_can <- merge(sup_tab_can, phog_tab.m[,c("partID", "pho_kin")], by = c("partID"), all.x = T)
         }
       }
-      ## make deeper directory for outpus
-      outDir2 <- paste0(outDir1, enzyme, '_', substrate, '_', rsd, "/")
-      dir.create(outDir2)
       
-      ##  add label
-      sup_3can$cancer <- factor(sup_3can$cancer, levels = cancers_sort)
-      if (length(which(is.na(sup_3can$is.upstream))) > 0) {
-        sup_3can$is.upstream[is.na(sup_3can$is.upstream)] <- "NA"
-      }  
-      
-      ## scatterplot
-      p = ggplot(sup_3can, aes(x=pho_kin, y=pho_sub))
-      p = p + geom_point(stroke = 0, alpha = 0.8, color = 'black', fill = 'black', shape = 16)
-      p = p + geom_smooth(mapping = aes(x = pho_kin, y = pho_sub), method = "glm", se=FALSE, color="grey", formula = y ~ x, linetype = 2, size = 0.5)
-      p = p + geom_vline(xintercept = 0, color = 'grey', alpha = 0.5, linetype = 2)
-      p = p + geom_hline(yintercept = 0, color = 'grey', alpha = 0.5, linetype = 2)
-      p <- p + facet_grid(.~cancer, scales = "free_y", space = "fixed")
-      p = p + labs(x = paste0(enzyme, " phosphorylation abundance(log2 ratio)"), 
-                   y = paste0(substrate, " ", rsd, " phosphorylation abundance(log2 ratio"))
-      p = p + theme_nogrid()
-      p = p + theme(axis.title = element_text(size=6), legend.position = 'none',
-                    axis.text.x = element_text(colour="black", size=6,angle=90, vjust=0.5), 
-                    axis.text.y = element_text(colour="black", size=6))#element_text(colour="black", size=14))
-      p = p + theme(title = element_text(size = 8))
-      p
-      fn = paste0(outDir2, enzyme, "_", substrate, "_", rsd, "_pro_sub+pho_kin~pho_sub.pdf")
-      ggsave(file=fn, height=2.5, width=6, useDingbats=FALSE)
-      
+      if (!is.null(pro_tab)) {
+        if (nrow(pro_tab) > 0) {
+          pro_tab.m <- melt(pro_tab, id.vars = "Gene")
+          pro_tab.m %>% head()
+          colnames(pro_tab.m) <- c("Gene", "partID", "pro_sub")
+          sup_tab_can <- merge(sup_tab_can, pro_tab.m[,c("partID", "pro_sub")], by = c("partID"), all.x = T)
+        }
+      }
+
+      if (!is.null(sup_tab_can)) {
+        sup_tab_can <- unique(sup_tab_can)
+
+        sup_tab_can$cancer <- cancer
+        sup_tab <- rbind(sup_tab, sup_tab_can)
+      }
       
     }
   }
+  
+  cancer
+  sup_tab %>%
+    tail()
+  
+  tab2p <- sup_tab
+  tab2p$cancer <- order_cancer(tab2p$cancer)
+  
+  p = ggplot(tab2p, aes(x=pho_kin, y=pho_sub))
+  p = p + geom_point(stroke = 0, alpha = 0.6, color = 'black', fill = 'black', shape = 16, size = 1.5)
+  p = p + geom_vline(xintercept = 0, color = 'grey', alpha = 0.5, linetype = 2)
+  p = p + geom_hline(yintercept = 0, color = 'grey', alpha = 0.5, linetype = 2)
+  p = p + geom_smooth(mapping = aes(x = pho_kin, y = pho_sub, color= ifelse(cancer %in% c("UCEC", "CO"), "red" ,"grey50")), method = "glm", se=FALSE, 
+                       formula = y ~ x, linetype = 2, size = 1)
+  p = p + scale_color_manual(values = c("red" = set1[1], "grey50" = "grey50"))
+  p <- p + facet_grid(cancer~., scales = "free_y", space = "fixed")
+  p = p + labs(y = paste0(geneA, " phosphorylation abundance(log2 ratio)"), 
+               x = paste0(geneB, " ", phosphosite, "\nphosphorylation abundance\n(log2 ratio"))
+  p = p + theme_nogrid()
+  p = p + theme(axis.title.x = element_text(size=6), axis.title.y = element_text(size=12, face = "bold"),
+                legend.position = 'none',
+                axis.text.x = element_text(colour="black", size=6,angle=90, vjust=0.5), 
+                axis.text.y = element_text(colour="black", size=6))
+  p = p + theme(title = element_text(size = 8))
+  p = p + theme(panel.spacing.y = unit(0, "line"), panel.background = element_rect(color = "white"), 
+                strip.background.y = element_rect(colour = "white", fill = "white"))
+  p
+  ggsave(filename = fn, width = 2.5, height = 6)
 }
-
-
-# plot unique -------------------------------------------------------------
-for (cancer in cancers_sort) {
-  tmp <- sup_cans_tab
-  tmp <- tmp[tmp$regulated & tmp$SELF == "trans",]
-  tmp <- tmp[!is.na(tmp[, paste0("uniq_", cancer)]) & tmp[, paste0("uniq_", cancer)],]
-  if (nrow(tmp) > 0) {
-    ## create output directory
-    outDir1 <- paste0(makeOutDir(resultD = resultD), paste0("uniq_", cancer), "/")
-    dir.create(outDir1)
-    for (i in c(1:nrow(tmp))[1]) {
-      # for (i in c(1)) {
-      enzyme <- as.character(tmp[i, "GENE"])
-      substrate <- as.character(tmp[i, "SUB_GENE"])
-      enzyme <- "PPP3CB"
-      substrate <- "FLNA"
-      
-      # for (gene in c("MAP2K4")) {
-      # for (rsd in c("S268")) {
-      for (rsd in unique(tmp$SUB_MOD_RSD[tmp$SUB_GENE == substrate])) {
-        sup_3can <- NULL
-        for (cancer2 in cancers_sort) {
-          ## input protein level
-          pro_data <- fread(input = paste(cptac_sharedD, cancer2,"/",prefix[cancer2], "_PRO_formatted_normalized_noControl.txt",sep=""), data.table = F)
-          pro_sub <- pro_data[pro_data$Gene == substrate,]
-          pro_kin <- pro_data[pro_data$Gene == enzyme,]
-          rm(pro_data)
-          ## input phospho level
-          pho_data <- fread(input = paste(cptac_sharedD, cancer2,"/",prefix[cancer2], "_PHO_formatted_normalized_noControl.txt",sep=""), data.table = F)
-          pho_data <- pho_data[pho_data$Gene == substrate,]
-          
-          ## input phospho level
-          phog_data <- fread(input = paste(cptac_sharedD, cancer2,"/",prefix[cancer2], "_collapsed_PHO_formatted_normalized_replicate_averaged_Tumor.txt",sep=""), data.table = F)
-          phog_data <- phog_data[phog_data$Gene == enzyme,]
-          
-          if (nrow(pro_sub) > 0 & nrow(pho_data) > 0 & nrow(phog_data)) {
-            pho_head <- formatPhosphosite(phosphosite_vector = pho_data$Phosphosite, gene_vector = pho_data$Gene)
-            pho_data <- pho_data[pho_head$SUB_MOD_RSD == rsd,]
-            
-            if ( nrow(pho_data) > 0) {
-              pro.m <- melt(pro_sub)
-              colnames(pro.m)[ncol(pro.m)] <- "pro_sub"
-              
-              pro.m2 <- melt(pro_kin)
-              colnames(pro.m2)[ncol(pro.m2)] <- "pro_kin"
-              
-              pho.m <- melt(pho_data)
-              colnames(pho.m)[ncol(pho.m)] <- "pho_sub"
-              
-              phog.m <- melt(phog_data)
-              colnames(phog.m)[ncol(phog.m)] <- "pho_kin"
-              
-              sup_tab <- merge(pro.m[, c("variable", "pro_sub")], pho.m[, c("variable", "pho_sub")], all = T)
-              sup_tab <- merge(sup_tab, phog.m[, c("variable", "pho_kin")], all = T)
-              sup_tab <- merge(sup_tab, pro.m2[, c("variable", "pro_kin")], all = T)
-              sup_tab$partID <- sampID2partID(sampleID_vector = as.vector(sup_tab$variable), sample_map = clinical)
-              
-              ## input maf
-              maf <- fread(input = paste0("./Ding_Lab/Projects_Current/CPTAC/CPTAC_Prospective_Samples/Somatic/", maf_files[grepl(x = maf_files, pattern = cancer2)]), data.table = F)
-              maf <- maf[maf$Hugo_Symbol == enzyme & maf$Variant_Classification != "Silent",]
-              if (nrow(maf) > 0) {
-                maf$partID <- str_split_fixed(string = maf$Tumor_Sample_Barcode, pattern = "_", 2)[,1]
-                maf$aa_change <- paste0(maf$Hugo_Symbol, ":", maf$HGVSp_Short)
-                maf$is.upstream <- ifelse(maf$Hugo_Symbol == enzyme, TRUE, FALSE)
-                sup_tab <- merge(sup_tab, maf[, c("partID", "Variant_Classification", "aa_change", "is.upstream")], all.x = T) 
-              } else {
-                sup_tab$aa_change <- NA
-                sup_tab$is.upstream <- NA
-                sup_tab$Variant_Classification <- NA
-              }
-              sup_tab$cancer <- cancer2
-              sup_3can <- rbind(sup_3can, sup_tab)
-            }
-          }
-        }
-        ## make deeper directory for outpus
-        outDir2 <- paste0(outDir1, enzyme, '_', substrate, '_', rsd, "/")
-        dir.create(outDir2)
-        
-        ##  add label
-        sup_3can$cancer <- factor(sup_3can$cancer, levels = cancers_sort)
-        if (length(which(is.na(sup_3can$is.upstream))) > 0) {
-          sup_3can$is.upstream[is.na(sup_3can$is.upstream)] <- "NA"
-        }  
-        
-        ## scatterplot
-        p = ggplot(sup_3can, aes(x=pho_kin, y=pho_sub))
-        p = p + geom_point(stroke = 0, alpha = 0.8, color = 'black', fill = 'black', shape = 16)
-        p = p + geom_smooth(mapping = aes(x = pho_kin, y = pho_sub), method = "glm", se=FALSE, color="grey", formula = y ~ x, linetype = 2, size = 0.5)
-        p = p + geom_vline(xintercept = 0, color = 'grey', alpha = 0.5, linetype = 2)
-        p = p + geom_hline(yintercept = 0, color = 'grey', alpha = 0.5, linetype = 2)
-        p <- p + facet_grid(.~cancer, scales = "free_y", space = "fixed")
-        p = p + labs(x = paste0(enzyme, " phosphorylation abundance(log2 ratio)"), 
-                     y = paste0(substrate, " ", rsd, " phosphorylation abundance(log2 ratio"))
-        p = p + theme_nogrid()
-        p = p + theme(axis.title = element_text(size=6), legend.position = 'none',
-                      axis.text.x = element_text(colour="black", size=6,angle=90, vjust=0.5), 
-                      axis.text.y = element_text(colour="black", size=6))#element_text(colour="black", size=14))
-        p = p + theme(title = element_text(size = 8))
-        p = p + ylim(c(-4,4))
-        p
-        fn = paste0(outDir2, enzyme, "_", substrate, "_", rsd, "_pro_sub+pho_kin~pho_sub.pdf")
-        ggsave(file=fn, height=2.5, width=6, useDingbats=FALSE)
-        
-        
-      }
-    }
-  }
-}
-
-
 
 

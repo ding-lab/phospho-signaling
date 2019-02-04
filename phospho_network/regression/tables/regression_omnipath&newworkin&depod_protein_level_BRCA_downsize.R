@@ -11,7 +11,7 @@ least_samples <- 5# least number of samples with complete data for each model
 inputnames <- c("noControl", "Control")
 names(inputnames) <- c("tumor", "normal")
 cancers2downsize <- c("BRCA", "CO")
-size_downsize <- 83
+downsize <- 83
 
 # inputs ------------------------------------------------------------------
 ptms_site_pairs_sup <- read_csv(paste0(ppnD, "compile_enzyme_substrate/tables/compile_omnipath_networkin_depod/omnipath_networkin_enzyme_substrate_site_level_union_source_cleaned_addDEPOD_extended.csv"))
@@ -57,7 +57,7 @@ for (sample_type in c("tumor")) {
         subdir1 <- paste0(makeOutDir(resultD = resultD), time, "/")
         dir.create(subdir1)
         sink(paste0(subdir1, 'samples_', cancer, '.txt'), append=FALSE, split=FALSE)
-        samples <- samples_all[sample(1:length(samples_all), size = size_downsize, replace = F)]
+        samples <- samples_all[sample(1:length(samples_all), size = downsize, replace = F)]
         print(samples)
         sink()
         closeAllConnections()

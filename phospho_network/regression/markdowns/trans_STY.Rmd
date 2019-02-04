@@ -1,0 +1,287 @@
+---
+title: "Trans_examine_Ser/Thr_vs_Tyr"
+output: html_document
+---
+
+## source
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source('~/Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R')
+ppnD <- "~/Box Sync/cptac2p/analysis_results/phospho_network/"
+library(dplyr)
+
+```
+
+## inputs
+``` {r input-phosphositeplus-table}
+psp_tab <- fread(input = "~/Box Sync/Ding_Lab/Projects_Current/PhosphoDrug/PhosphoDrug_shared_data/Resources/Phospho_databases/PhosphoSitePlus/01042019/Kinase_Substrate_Dataset", data.table = F)
+psp_tab %>%  head()
+
+psp_tab$pair_pro <- paste0(psp_tab$GENE, ":", psp_tab$SUB_GENE)
+psp_tab$pair_site <- paste0(psp_tab$pair_pro, "_", psp_tab$SUB_MOD_RSD)
+
+psp_dis_tab <- read_delim("Box Sync/Ding_Lab/Projects_Current/PhosphoDrug/PhosphoDrug_shared_data/Resources/Phospho_databases/PhosphoSitePlus/01042019/Disease-associated_sites", "\t", escape_double = FALSE, trim_ws = TRUE, skip = 2)
+psp_dis_tab %>% head()
+psp_tab$aa <- substr(x = psp_tab$SUB_MOD_RSD, start = 1, stop = 1)
+```
+
+``` {r load-regression-result}
+## load regression table
+reg_nonNA <- 20
+enzyme_type <- "kinase"
+regression <- fread(input = paste0(ppnD, "regression/tables/", "change_regression_nonNA/", 
+                                   enzyme_type, "_substrate_regression_cptac2p_3can_tumor",
+                                   "_reg_nonNA", reg_nonNA, ".txt"), data.table = F)
+regression <- markSigSiteCan(regression = regression, sig_thres = 0.05, enzyme_type = enzyme_type)
+regression$rsd <- paste0(regression$SUB_GENE, "_", regression$SUB_MOD_RSD)
+regression$rsd[regression$SELF == "cis" & regression$fdr_sig & regression$coef_sig] %>% head
+regression$regulated <- (regression$fdr_sig & regression$coef_sig)
+regression$pair_pro <- paste0(regression$GENE, ":", regression$SUB_GENE)
+regression$pair_site <- paste0(regression$pair_pro, "_", regression$SUB_MOD_RSD)
+
+cis_detected_sites <- unique(regression$rsd[regression$SELF == "cis"])
+cis_detected_sites %>% length()
+
+cis_regulated_sites <- unique(regression$rsd[regression$SELF == "cis" & regression$fdr_sig & regression$coef_sig])
+cis_regulated_sites %>% length()
+
+trans_detected_sites <- unique(regression$rsd[regression$SELF == "trans"])
+trans_detected_sites %>% length()
+
+trans_regulated_sites <- unique(regression$rsd[regression$SELF == "trans" & regression$fdr_sig & regression$coef_sig])
+trans_regulated_sites %>% length()
+
+regulated_pair_pro <- unique(regression$pair_pro[regression$regulated])
+detected_pair_pro <- unique(regression$pair_pro)
+
+regulated_pair_site <- unique(regression$pair_site[regression$regulated])
+detected_pair_site <- unique(regression$pair_site)
+
+```
+
+
+
+## get get-tyrosine-kinase-from-known-relations
+
+``` {r get-tyrosine-kinase-from-known-relations}
+## there are 90 tyrosine kinases in human proteome, are there othe kinases that phosphorylate tyrosine?
+psp_tab %>% head()
+
+psp_aa_long <- psp_tab %>% 
+  filter(KIN_ORGANISM == "human" & SUB_ORGANISM == "human") %>%
+  select(GENE, aa) %>%
+  unique() %>%
+  table() %>%
+  as.data.frame() 
+
+psp_aa_wide <- dcast(psp_aa_long, .(GENE, aa))
+psp_aa_wide %>%
+  filter(Y == 1) %>%
+  nrow()
+
+TK_list <- psp_aa_wide %>%
+  filter(Y >= 1) %>%
+  select(GENE) %>%
+  as.vector()
+
+TK_list <- as.vector(TK_list$GENE)
+
+STYK_list <- psp_aa_wide %>%
+  filter(Y >= 1 & S >= 1 & T >= 1) %>%
+  select(GENE) %>%
+  as.vector()
+
+STYK_list$GENE %>% length()
+```
+
+## business
+``` {r test-pTyr-in-BRCA-regression-results}
+for (cancer in c("BRCA", "OV", "CO")) {
+  reg_tab2test <- regression %>%
+  mutate(aa = substr(x = SUB_MOD_RSD, start = 1, stop = 1)) %>%
+  filter(Cancer == cancer, aa == "Y", SELF == "trans")
+  
+  reg_tab2test$is.TK <- (reg_tab2test$GENE %in% TK_list)
+  
+  # reg_tab2test %>%
+  #   select(is.TK, regulated) %>%
+  #   table() %>%
+  #   fisher.test() %>%
+  #   print()
+  
+  TyrK_Tyr_coefs <- reg_tab2test %>%
+    filter(is.TK == TRUE) %>%
+    select(coef_pho_kin)
+  notTyrK_Tyr_coefs <- reg_tab2test %>%
+    filter(is.TK != TRUE) %>%
+    select(coef_pho_kin)
+  
+  # wilcox.test(x = TyrK_Tyr_coefs$coef_pho_kin, y = notTyrK_Tyr_coefs$coef_pho_kin) %>%
+  #   print()
+}
+
+```
+
+``` {r test-pTyr-regulated-by-nonTyr-kinases}
+  reg_tab2test <- regression %>%
+  mutate(aa = substr(x = SUB_MOD_RSD, start = 1, stop = 1)) %>%
+  filter(aa == "Y", SELF == "trans")
+  reg_tab2test$is.TK <- (reg_tab2test$GENE %in% TK_list)
+
+  ratio_tmp <- (reg_tab2test %>%
+      filter(regulated == TRUE & is.TK == FALSE) %>%
+      select(rsd) %>%
+      unique() %>%
+      nrow())/(reg_tab2test %>%
+      filter(regulated == TRUE) %>%
+      select(rsd) %>%
+      unique() %>%
+      nrow())
+  
+  ratio_tmp %>% print()
+```
+
+``` {r test-nonpTyr-regulated-by-Tyr-kinases}
+  reg_tab2test <- regression %>%
+  mutate(aa = substr(x = SUB_MOD_RSD, start = 1, stop = 1)) %>%
+  filter(aa != "Y", SELF == "trans")
+  reg_tab2test$is.TK <- (reg_tab2test$GENE %in% TK_list)
+
+  ratio_tmp <- (reg_tab2test %>%
+      filter(regulated == TRUE & is.TK != FALSE) %>%
+      select(rsd) %>%
+      unique() %>%
+      nrow())/(reg_tab2test %>%
+      filter(regulated == TRUE) %>%
+      select(rsd) %>%
+      unique() %>%
+      nrow())
+  
+  ratio_tmp %>% print()
+```
+
+
+``` {r test-whether-Tyr-kinase-preferred-pTyr}
+for (cancer in c("BRCA", "OV", "CO")) {
+  reg_tab2test <- regression %>%
+    mutate(aa = substr(x = SUB_MOD_RSD, start = 1, stop = 1)) %>%
+    mutate(is.Y = (aa == "Y")) %>%
+    mutate(is.S = (aa == "S")) %>%
+    mutate(is.T = (aa == "T")) %>%
+    filter(Cancer == cancer, GENE %in% TK_list, SELF == "trans")
+  
+  # reg_tab2test %>%
+  #   select(is.Y, regulated) %>%
+  #   table() %>%
+  #   fisher.test() %>%
+  #   print()
+  
+  
+  # reg_tab2test %>%
+  #   select(is.S, regulated) %>%
+  #   table() %>%
+  #   fisher.test() %>%
+  #   print()
+  # 
+  #     
+  # reg_tab2test %>%
+  #   select(is.T, regulated) %>%
+  #   table() %>%
+  #   fisher.test() %>%
+  #   print()
+  
+  
+  TyrK_Tyr_coefs <- reg_tab2test %>%
+    filter(is.Y == TRUE) %>%
+    select(coef_pho_kin)
+  notTyrK_Tyr_coefs <- reg_tab2test %>%
+    filter(is.Y != TRUE) %>%
+    select(coef_pho_kin)
+  
+  wilcox.test(x = TyrK_Tyr_coefs$coef_pho_kin, y = notTyrK_Tyr_coefs$coef_pho_kin) %>%
+    print()
+  summary(TyrK_Tyr_coefs$coef_pho_kin)
+  summary(notTyrK_Tyr_coefs$coef_pho_kin)
+
+}
+
+```
+
+it seems like SRC might be a good example for tyrosine kinase
+
+``` {r screen-Tyr-kinase-for-strong-coefs-for-pTyr}
+candidate_tyr_kinases <- NULL
+for (cancer in c("BRCA", "OV", "CO")) {
+  reg_tab2test <- regression %>%
+    mutate(aa = substr(x = SUB_MOD_RSD, start = 1, stop = 1)) %>%
+    mutate(is.Y = (aa == "Y")) %>%
+    mutate(is.S = (aa == "S")) %>%
+    mutate(is.T = (aa == "T")) %>%
+    filter(Cancer == cancer, SELF == "trans", regulated == TRUE)
+
+  ## get the tyrosine kinases having the most numbr of phosphosites
+  num_regulated_sites_per_kinase <- reg_tab2test %>%
+    select(GENE, aa) %>%
+    table() %>%
+    data.frame()
+  
+  kinases2test <- num_regulated_sites_per_kinase %>%
+    filter(aa == "Y" & Freq >=4 )
+  
+  kinases2test %>%
+    nrow()
+  
+  kinases2test %>%
+    head() %>%
+    print()
+  
+  candidate_tyr_kinases <- c(candidate_tyr_kinases, as.vector(kinases2test$GENE))
+}
+```
+
+
+``` {r test-ST-kinase-in-regression-results}
+for (cancer in c("BRCA", "OV", "CO")) {
+  reg_tab2test <- regression %>%
+    mutate(aa = substr(x = SUB_MOD_RSD, start = 1, stop = 1)) %>%
+    mutate(is.Y = (aa == "Y")) %>%
+    mutate(is.S = (aa == "S")) %>%
+    mutate(is.T = (aa == "T")) %>%
+    filter(Cancer == cancer, !(GENE %in% TK_list), SELF == "trans")
+  
+  # reg_tab2test %>%
+  #   select(is.Y, regulated) %>%
+  #   table() %>%
+  #   fisher.test() %>%
+  #   print()
+  
+    
+  # reg_tab2test %>%
+  #   select(is.S, regulated) %>%
+  #   table() %>%
+  #   fisher.test() %>%
+  #   print()
+  # 
+  #     
+  reg_tab2test %>%
+    select(is.T, regulated) %>%
+    table() %>%
+    fisher.test() %>%
+    print()
+
+
+TyrK_Tyr_coefs <- reg_tab2test %>%
+         filter(is.Y == TRUE) %>%
+         select(coef_pho_kin)
+notTyrK_Tyr_coefs <- reg_tab2test %>%
+         filter(is.Y != TRUE) %>%
+         select(coef_pho_kin)
+
+# wilcox.test(x = TyrK_Tyr_coefs$coef_pho_kin, y = notTyrK_Tyr_coefs$coef_pho_kin) %>%
+#   print()
+summary(TyrK_Tyr_coefs$coef_pho_kin)
+summary(notTyrK_Tyr_coefs$coef_pho_kin)
+}
+
+```
+

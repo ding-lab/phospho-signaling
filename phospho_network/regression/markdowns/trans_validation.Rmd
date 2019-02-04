@@ -1,0 +1,261 @@
+---
+title: "trans_validation"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# source-------------------------
+source('~/Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R')
+ppnD <- "~/Box Sync/cptac2p/analysis_results/phospho_network/"
+```
+
+## inputs
+``` {r input-phosphositeplus-table}
+psp_tab <- fread(input = "~/Box Sync/Ding_Lab/Projects_Current/PhosphoDrug/PhosphoDrug_shared_data/Resources/Phospho_databases/PhosphoSitePlus/01042019/Kinase_Substrate_Dataset", data.table = F)
+psp_tab %>%  head()
+
+psp_tab$pair_pro <- paste0(psp_tab$GENE, ":", psp_tab$SUB_GENE)
+psp_tab$pair_site <- paste0(psp_tab$pair_pro, "_", psp_tab$SUB_MOD_RSD)
+
+psp_dis_tab <- read_delim("Box Sync/Ding_Lab/Projects_Current/PhosphoDrug/PhosphoDrug_shared_data/Resources/Phospho_databases/PhosphoSitePlus/01042019/Disease-associated_sites", "\t", escape_double = FALSE, trim_ws = TRUE, skip = 2)
+psp_dis_tab %>% head()
+
+```
+
+``` {r load-regression-result}
+## load regression table
+reg_nonNA <- 20
+enzyme_type <- "kinase"
+regression <- fread(input = paste0(ppnD, "regression/tables/", "change_regression_nonNA/", 
+                                   enzyme_type, "_substrate_regression_cptac2p_3can_tumor",
+                                   "_reg_nonNA", reg_nonNA, ".txt"), data.table = F)
+regression <- markSigSiteCan(regression = regression, sig_thres = 0.05, enzyme_type = enzyme_type)
+regression$rsd <- paste0(regression$SUB_GENE, "_", regression$SUB_MOD_RSD)
+regression$rsd[regression$SELF == "cis" & regression$fdr_sig & regression$coef_sig] %>% head
+regression$regulated <- (regression$fdr_sig & regression$coef_sig)
+regression$pair_pro <- paste0(regression$GENE, ":", regression$SUB_GENE)
+regression$pair_site <- paste0(regression$pair_pro, "_", regression$SUB_MOD_RSD)
+
+cis_detected_sites <- unique(regression$rsd[regression$SELF == "cis"])
+cis_detected_sites %>% length()
+
+cis_regulated_sites <- unique(regression$rsd[regression$SELF == "cis" & regression$fdr_sig & regression$coef_sig])
+cis_regulated_sites %>% length()
+
+trans_detected_sites <- unique(regression$rsd[regression$SELF == "trans"])
+trans_detected_sites %>% length()
+
+trans_regulated_sites <- unique(regression$rsd[regression$SELF == "trans" & regression$fdr_sig & regression$coef_sig])
+trans_regulated_sites %>% length()
+
+regulated_pair_pro <- unique(regression$pair_pro[regression$regulated])
+detected_pair_pro <- unique(regression$pair_pro)
+
+regulated_pair_site <- unique(regression$pair_site[regression$regulated])
+detected_pair_site <- unique(regression$pair_site)
+
+```
+
+## compare in vivo & human in kinase_protein-substrate_protein pairs
+``` {r filter-psp-human-in_vivo-compare-pro}
+psp_tab2compare <- psp_tab[psp_tab$KIN_ORGANISM == "human" & psp_tab$SUB_ORGANISM == "human" & psp_tab$IN_VIVO_RXN == "X",]
+psp_tab2compare %>% head()
+psp_tab2compare$pair_pro %>% length()
+detected_pair_pro %>% length()
+intersect(psp_tab2compare$pair_pro, detected_pair_pro) %>% length()
+intersect(psp_tab2compare$pair_pro, regulated_pair_pro) %>% length()
+
+length(intersect(psp_tab2compare$pair_pro, regulated_pair_pro))/length(intersect(psp_tab2compare$pair_pro, detected_pair_pro))
+```
+
+``` {r filter-psp-human-in_vivo-compare-pro}
+psp_tab2compare <- psp_tab[psp_tab$KIN_ORGANISM == "human" & psp_tab$SUB_ORGANISM == "human" & psp_tab$IN_VITRO_RXN == "X",]
+psp_tab2compare %>% head()
+psp_tab2compare$pair_pro %>% length()
+detected_pair_pro %>% length()
+intersect(psp_tab2compare$pair_pro, detected_pair_pro) %>% length()
+intersect(psp_tab2compare$pair_pro, regulated_pair_pro) %>% length()
+
+length(intersect(psp_tab2compare$pair_pro, regulated_pair_pro))/length(intersect(psp_tab2compare$pair_pro, detected_pair_pro))
+```
+
+``` {r filter-psp-human-in_vivo+in_vitro-compare-pro}
+psp_tab2compare <- psp_tab[psp_tab$KIN_ORGANISM == "human" & psp_tab$SUB_ORGANISM == "human" & (psp_tab$IN_VIVO_RXN == "X" | psp_tab$IN_VITRO_RXN == "X"),]
+psp_tab2compare %>% head()
+psp_tab2compare$pair_pro %>% length()
+detected_pair_pro %>% length()
+intersect(psp_tab2compare$pair_pro, detected_pair_pro) %>% length()
+intersect(psp_tab2compare$pair_pro, regulated_pair_pro) %>% length()
+
+length(intersect(psp_tab2compare$pair_pro, regulated_pair_pro))/length(intersect(psp_tab2compare$pair_pro, detected_pair_pro))
+```
+
+``` {r filter-psp-human-in_vivo-compare-site}
+psp_tab2compare <- psp_tab[psp_tab$KIN_ORGANISM == "human" & psp_tab$SUB_ORGANISM == "human" & psp_tab$IN_VIVO_RXN == "X",]
+psp_tab2compare %>% head()
+
+psp_tab2compare$pair_site %>% length()
+detected_pair_site %>% length()
+
+intersect(psp_tab2compare$pair_site, detected_pair_site) %>% length()
+intersect(psp_tab2compare$pair_site, regulated_pair_site) %>% length()
+
+length(intersect(psp_tab2compare$pair_site, regulated_pair_site))/length(intersect(psp_tab2compare$pair_site, detected_pair_site))
+
+## per kinase
+pair_sites <- intersect(psp_tab2compare$pair_site, regulated_pair_site)
+str_split_fixed(string = pair_sites, pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  data.frame() %>%
+  summarise(min_freq = min(Freq), max_freq = max(Freq))
+
+## number of kinases with overlap with the psp site-level pairs
+str_split_fixed(string = pair_sites, pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow()
+
+## number of kinases detected with substrate info in psp
+str_split_fixed(string = intersect(psp_tab2compare$pair_site, detected_pair_site), pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow()
+
+(str_split_fixed(string = pair_sites, pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow())/(str_split_fixed(string = intersect(psp_tab2compare$pair_site, detected_pair_site), pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow())
+
+## number of regulated phosphosite not reported before
+get_site <- function(x) { 
+    site = str_split_fixed(string = x, pattern = ":", n = 2)[,2]
+    return(site)
+}
+
+regulated_pair_site[!(regulated_pair_site %in% psp_tab2compare$pair_site)] %>%
+  get_site()  %>%
+  unique() %>%
+  length()
+```
+
+``` {r filter-psp-human-in_vivo-compare-site}
+psp_tab2compare <- psp_tab[psp_tab$KIN_ORGANISM == "human" & psp_tab$SUB_ORGANISM == "human" & psp_tab$IN_VIVO_RXN == "X",]
+psp_tab2compare %>% head()
+
+psp_tab2compare$pair_site %>% length()
+detected_pair_site %>% length()
+
+intersect(psp_tab2compare$pair_site, detected_pair_site) %>% length()
+intersect(psp_tab2compare$pair_site, regulated_pair_site) %>% length()
+
+length(intersect(psp_tab2compare$pair_site, regulated_pair_site))/length(intersect(psp_tab2compare$pair_site, detected_pair_site))
+
+## per kinase
+pair_sites <- intersect(psp_tab2compare$pair_site, regulated_pair_site)
+str_split_fixed(string = pair_sites, pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  data.frame() %>%
+  summarise(min_freq = min(Freq), max_freq = max(Freq))
+
+## number of kinases with overlap with the psp site-level pairs
+str_split_fixed(string = pair_sites, pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow()
+
+## number of kinases detected with substrate info in psp
+str_split_fixed(string = intersect(psp_tab2compare$pair_site, detected_pair_site), pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow()
+
+(str_split_fixed(string = pair_sites, pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow())/(str_split_fixed(string = intersect(psp_tab2compare$pair_site, detected_pair_site), pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow())
+
+## number of regulated phosphosite not reported before
+get_site <- function(x) { 
+    site = str_split_fixed(string = x, pattern = ":", n = 2)[,2]
+    return(site)
+}
+
+regulated_pair_site[!(regulated_pair_site %in% psp_tab2compare$pair_site)] %>%
+  get_site()  %>%
+  unique() %>%
+  length()
+```
+
+
+``` {r filter-psp-human-in_vivo&vitro-compare-site}
+psp_tab2compare <- psp_tab[psp_tab$KIN_ORGANISM == "human" & psp_tab$SUB_ORGANISM == "human" & (psp_tab$IN_VIVO_RXN == "X" | psp_tab$IN_VITRO_RXN== "X"),]
+psp_tab2compare %>% head()
+
+psp_tab2compare$pair_site %>% length()
+detected_pair_site %>% length()
+
+intersect(psp_tab2compare$pair_site, detected_pair_site) %>% length()
+intersect(psp_tab2compare$pair_site, regulated_pair_site) %>% length()
+
+length(intersect(psp_tab2compare$pair_site, regulated_pair_site))/length(intersect(psp_tab2compare$pair_site, detected_pair_site))
+
+## per kinase
+pair_sites <- intersect(psp_tab2compare$pair_site, regulated_pair_site)
+str_split_fixed(string = pair_sites, pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  data.frame() %>%
+  summarise(min_freq = min(Freq), max_freq = max(Freq))
+
+## number of kinases with overlap with the psp site-level pairs
+str_split_fixed(string = pair_sites, pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow()
+
+## number of kinases regulating the psp reported site-level pairs
+str_split_fixed(string = pair_sites, pattern = ":|\\_", n = 3)[,1:2] %>% 
+  data.frame() %>%
+  table() %>%
+  data.frame() %>%
+  filter(Freq > 1)
+
+## number of kinases detected with substrate info in psp
+str_split_fixed(string = intersect(psp_tab2compare$pair_site, detected_pair_site), pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow()
+
+(str_split_fixed(string = pair_sites, pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow())/(str_split_fixed(string = intersect(psp_tab2compare$pair_site, detected_pair_site), pattern = ":", n = 2)[,1] %>% 
+  table() %>%
+  nrow())
+
+## number of regulated phosphosite not reported before
+get_site <- function(x) { 
+    site = str_split_fixed(string = x, pattern = ":", n = 2)[,2]
+    return(site)
+}
+
+regulated_pair_site[!(regulated_pair_site %in% psp_tab2compare$pair_site)] %>%
+  get_site()  %>%
+  unique() %>%
+  length()
+```
+
+``` {r filter-psp-human-in_vitro-compare-site}
+psp_tab2compare <- psp_tab[psp_tab$KIN_ORGANISM == "human" & psp_tab$SUB_ORGANISM == "human" & psp_tab$IN_VITRO_RXN == "X",]
+psp_tab2compare %>% head()
+
+psp_tab2compare$pair_site %>% length()
+
+detected_pair_site %>% length()
+
+intersect(psp_tab2compare$pair_site, detected_pair_site) %>% length()
+intersect(psp_tab2compare$pair_site, regulated_pair_site) %>% length()
+
+length(intersect(psp_tab2compare$pair_site, regulated_pair_site))/length(intersect(psp_tab2compare$pair_site, detected_pair_site))
+```
+
+
+
+## compare all PSP k-s pairs in kinase_protein-substrate_protein pairs
+
+## compare 

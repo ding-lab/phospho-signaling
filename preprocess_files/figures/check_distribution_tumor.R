@@ -1,20 +1,94 @@
 # Yige Wu @ WashU Jan 2018
 # check the distribution of log ratios per sample (for deciding normalization method)
-# load packages -----------------------------------------------------------
-source('/Users/yigewu/Box Sync/cptac2p_analysis/preprocess_files/tables/preprocess_files.R')
-source('/Users/yigewu/Box Sync/cptac2p_analysis/PHOsPHO_network/PHOsPHO_network_plotting.R')
-source('/Users/yigewu/Box Sync/cptac2p_analysis/PHOsPHO_network/PHOsPHO_network_shared.R')
+
+# source -----------------------------------------------------------
+wd <- getwd()
+if (wd != "/Users/yigewu/Box Sync") {
+  setwd("/Users/yigewu/Box Sync")
+}
+source('./cptac2p_analysis/preprocess_files/tables/preprocess_files.R')
+source('./cptac2p_analysis/phospho_network/phospho_network_plotting.R')
+source('./cptac2p_analysis/phospho_network/phospho_network_shared.R')
 
 
 # inputs ------------------------------------------------------------------
 clinical <- loadSampMap()
 pam50_map <- loadPAM50Map()
 msi_map <- loadMSIMap()
+## the below matrix specify the cancer type, the pipeline and sample type (tumor/adjacent_normal/..) of the data
+cancers2process <- matrix(data = c("UCEC", "CDAP", "tumor"), ncol = 3)
+cancers2process <- matrix(data = c("CCRCC", "CDAP", "tumor"), ncol = 3)
+cancers2process <- matrix(data = c("CCRCC", "PGDAC", "tumor"), ncol = 3)
 
-# process proteome and PHOsPHOproteome data ---------------------------------------------
+# plot UCEC & CCRCC data -----------------------------------------------------
+for (i in 1:nrow(cancers2process)) {
+  cancer <- cancers2process[i,1]
+  pipeline <- cancers2process[i,2]
+  sample_type <- cancers2process[i,3]
+  if (cancer %in% c("UCEC", "CCRCC") & pipeline == "CDAP") {
+    norm_type2process <- c("unnormalized", "scaled")
+  } else if (cancer == "CCRCC" & pipeline == "PGDAC") {
+    norm_type2process <- c("MD_MAD")
+  } else if (cancer == "UCEC" & pipeline == "PGDAC") {
+    norm_type2process <- c("median_polishing")
+  }
+  for (norm_type in norm_type2process) {
+    ## plot the distribution of un-normalized unshared log ratio for protein data
+    ### input protein data
+    expresson_type <- "PRO"
+    Pro.f <- loadParseProteomicsData(cancer = cancer, expresson_type = expresson_type, sample_type = sample_type, pipeline_type = pipeline_type, norm_type = norm_type)
+    ### melt and rename columns
+    Pro.f.m <- melt(Pro.f)
+    rm(Pro.f)
+    head(Pro.f.m)
+    Pro.f.m <- Pro.f.m[, c("variable", "value")]
+    colnames(Pro.f.m) <- c('specimen_id_raw', "value")
+    ### prepare data frame for plotting
+    tab2p <- Pro.f.m
+    rm(Pro.f.m)
+    tab2p$subtype = ""
+    p <- ggplot(tab2p, aes(x=value))
+    p <- p + geom_density(aes(group=specimen_id_raw, colour=subtype), alpha = 0.1)
+    p <- p + theme_minimal()
+    p <- p + facet_grid(subtype~., scales = "fixed", space = "fixed")
+    p <- p + xlim(c(-10, 10))
+    p <- p + xlab(paste0(cancer, "_", expresson_type, "_", sample_type, "_", pipeline_type, "_", norm_type," data"))
+    p
+    ggsave(filename = paste0(makeOutDir(resultD = resultD),  cancer, "_", expresson_type, "_", sample_type, "_", pipeline_type, "_", norm_type, ".pdf"),
+           width = 5, height = 4)
+    rm(p)
+    
+    ## plot the distribution of un-normalized unshared log ratio for phosphosite data
+    expresson_type <- "PHO"
+    PHO.f <- loadParseProteomicsData(cancer = cancer, expresson_type = expresson_type, sample_type = sample_type, pipeline_type = pipeline_type, norm_type = norm_type)
+    PHO.f <- PHO.f[, colnames(PHO.f)[!(colnames(PHO.f) %in% c("Gene", "Phosphosite", "Peptide_ID"))]]
+    PHO.f.m <- melt(PHO.f)
+    PHO.f.m %>% head()
+    colnames(PHO.f.m) <- c('specimen_id_raw', "value")
+    rm(PHO.f)
+    tab2p <- PHO.f.m
+    rm(PHO.f.m)
+    tab2p$subtype = ""
+    p <- ggplot(tab2p, aes(x=value))
+    p <- p + geom_density(aes(group=specimen_id_raw, colour=subtype), alpha = 0.1)
+    p <- p + theme_minimal()
+    p <- p + facet_grid(subtype~., scales = "fixed", space = "fixed")
+    p <- p + xlim(c(-10, 10))
+    p <- p + xlab(paste0(cancer, "_", expresson_type, "_", sample_type, "_", pipeline_type, "_", norm_type," data"))
+    p
+    ggsave(filename = paste0(makeOutDir(resultD = resultD),  cancer, "_", expresson_type, "_", sample_type, "_", pipeline_type, "_", norm_type, ".pdf"),
+           width = 5, height = 4)
+    rm(p)
+    
+  }
+  
+}
+
+# process proteome and PHOsPHOproteome data for prospective data---------------------------------------------
+stop("need to edit more")
 for (cancer in cancers_sort) {
   cancer <- "OV"
-  # keep shared peptide log ratio
+  # keep sunshared hared peptide log ratio
   Pro.f = fread(paste(cptac_sharedD, cancer, "/", prefix[cancer], "_PRO_formatted.txt",sep=""), data.table=FALSE)
   ## sometimes there are replicates for the same sample, their smaple IDs are irregular
   samples_raw <- colnames(Pro.f)

@@ -9,15 +9,19 @@ source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
 num_genoalt_thres <- 4
 
 # inputs ------------------------------------------------------------------
-complex_pair_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/compile_enzyme_substrate/tables/parse_corum_signor_reactome/sup_complex_pair_uniq.txt", data.table = F)
+# complex_pair_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/compile_enzyme_substrate/tables/parse_corum_signor_reactome/sup_complex_pair_uniq.txt", data.table = F)
 
 # get the gene list covering all the enzymes and substrates ---------------
-genes4mat <- unique(c(as.vector(complex_pair_tab$geneA), as.vector(complex_pair_tab$geneB)))
+# genes4mat <- unique(c(as.vector(complex_pair_tab$geneA), as.vector(complex_pair_tab$geneB)))
+genes4mat <- unique(unlist(pair_tab))
+
 length(genes4mat)
 
 # loop by cancer ----------------------------------------------------------
 for (cancer in "UCEC") {
-  maf <- loadMaf(cancer = cancer, maf_files = maf_files)
+  # maf <- loadMaf(cancer = cancer, maf_files = maf_files)
+  maf <- fread(input = "./Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/Baylor_DataFreeze_V2/UCEC_somatic_mutation_site_level_V2.0.maf", data.table = F)
+  
   nrow(maf)
   maf <- maf[maf$Hugo_Symbol %in% genes4mat,]
   nrow(maf)

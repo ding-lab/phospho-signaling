@@ -20,11 +20,11 @@ mut_cnv_cans <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_cna_impact_U
 sub_genes2pathways <- map2TCGApathwaways(gene_list = unique(mut_cnv_cans$SUB_GENE), pathway_list = tcga_pathways_pluskegg_and_pathway)
 sub_genes2pathways <- data.frame(SUB_GENE = rep(x = names(sub_genes2pathways), sapply(X = sub_genes2pathways, FUN = function(x) length(x))), 
                                  SUB_GENE.path = unlist(sub_genes2pathways, use.names = F))
-sub_genes2pathways <- sub_genes2pathways[!(sub_genes2pathways$SUB_GENE == "APC" & sub_genes2pathways$SUB_GENE.path != "WNT") & !(sub_genes2pathways$SUB_GENE == "GSK3B" & sub_genes2pathways$SUB_GENE.path != "PI3K") & !(sub_genes2pathways$SUB_GENE == "IRS1" & sub_genes2pathways$SUB_GENE.path != "RTK RAS"),]
+sub_genes2pathways <- sub_genes2pathways[!(sub_genes2pathways$SUB_GENE == "APC" & sub_genes2pathways$SUB_GENE.path != "WNT") & !(sub_genes2pathways$SUB_GENE == "GSK3B" & sub_genes2pathways$SUB_GENE.path != "PI3K") & !(sub_genes2pathways$SUB_GENE == "IRS1" & sub_genes2pathways$SUB_GENE.path != "RTK RAS") & !(sub_genes2pathways$SUB_GENE == "TP53" & sub_genes2pathways$SUB_GENE.path != "TP53"),]
 mut_cnv_cans$SUB_GENE.path <- NULL
 mut_cnv_cans <- merge(mut_cnv_cans, sub_genes2pathways, all.x = T)
 
-for (genoalt_type in c("mutation")) {
+for (genoalt_type in c("mut")) {
   ## get the list of kinase/phosphatases to show
   enzymes2show <- unique(mut_cnv_cans$GENE[mut_cnv_cans$p < sig_p_thres & mut_cnv_cans$p > 0 & mut_cnv_cans$cancer == "UCEC" & mut_cnv_cans$genoalt_type == genoalt_type & (mut_cnv_cans$GENE %in% driver_genes2show | mut_cnv_cans$driver_gene_type.en != "")])
   enzymes2show <- enzymes2show[!(enzymes2show %in% c("ACVR2A", "ARHGAP35", "CDK12", "EPHA2", "FLNA", "HUWE1", "INPPL1", "NCOR1", "RASA1", "SED2", "STAG2", "TSC1",
@@ -81,7 +81,11 @@ for (genoalt_type in c("mutation")) {
   p <- p + theme(axis.text.y = element_text(size = 12, face = "bold"))
   p <- p + theme(axis.text.x = element_text(size = 10, face = "bold", angle = 90, hjust = 0.5, vjust = 0.5))
   p <- p + theme(panel.grid.major = element_line(size = 0.5, linetype = 'solid', colour = "grey80"))
+  p <- p + theme(strip.text.x = element_text(angle = 90))
   p
-  fn = paste(makeOutDir(resultD = resultD), genoalt_type, "_sig_cancer_sig_thres", sig_p_thres, '_driver_enzyme_only_cleaned.png',sep = "")
-  ggsave(filename = fn, width = 12, height = 8, device = png())
+  # fn = paste(makeOutDir(resultD = resultD), genoalt_type, "_sig_cancer_sig_thres", sig_p_thres, '_driver_enzyme_only_cleaned.png',sep = "")
+  # ggsave(filename = fn, width = 12, height = 8, device = png())
+  
+  fn = paste(makeOutDir(resultD = resultD), genoalt_type, "_sig_cancer_sig_thres", sig_p_thres, '_driver_enzyme_only_cleaned.pdf',sep = "")
+  ggsave(filename = fn, width = 12, height = 8)
  }

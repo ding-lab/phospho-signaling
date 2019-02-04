@@ -17,10 +17,32 @@ sig <- 0.05 # significance level
 setwd(baseD)
 
 color_cancers <- c(colors['BRCA'], colors['OV'], colors['COAD'], "#bdbdbd"); names(color_cancers) <- c("BRCA", "OV", "CO", "other")
-color_cancers2 <- c(colors['BRCA'], colors['OV'],  "#39BEB1", "#fb9a99", "#bdbdbd"); names(color_cancers2) <- c("BRCA", "OV", "CO", "UCEC","other")
+color_cancers2 <- c(colors['BRCA'], colors['OV'],  "#39BEB1", colors['UCEC'], colors['KIRC'], colors['LIHC'], "grey50"); names(color_cancers2) <- c("BRCA", "OV", "CO", "UCEC","CCRCC", "LIHC", "other")
 
 ## colors for different amino acid PTMs
 color_aa <- c("#8da0cb", "#e78ac3", "#a6d854"); names(color_aa) <- c("S", "T", "Y")
+
+
+
+# pheatmap ----------------------------------------------------------------
+if(!("pheatmap" %in% installed.packages()[,"Package"])) {
+  install.packages("pheatmap")
+}
+library(pheatmap)
+save_pheatmap_png <- function(x, filename, width=1200, height=1000, res = 150) {
+  png(filename, width = width, height = height, res = res)
+  grid::grid.newpage()
+  grid::grid.draw(x$gtable)
+  dev.off()
+}
+
+save_pheatmap_pdf <- function(x, filename, width=6, height=6) {
+  pdf(filename, width = width, height = height)
+  grid::grid.newpage()
+  grid::grid.draw(x$gtable)
+  dev.off()
+}
+library(RColorBrewer)
 
 bubble_heatmap = function(cancer_id, protein, self, id, table_bubble, table_substrate, table_kinase, outDir, subtype_sort, h = 12, w = 5.5) {
   ## Usage: plut bubble plot and heatmap side by side

@@ -5,6 +5,7 @@
 
 # source ------------------------------------------------------------------
 source("Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R")
+source("Box Sync/cptac2p_analysis/phospho_network/genoalt/tables/generate_somatic_mutation_matrix.R")
 
 # set variables -----------------------------------------------------------
 num_control_thres <- 4
@@ -19,44 +20,13 @@ id_vars <- c("geneA", "geneB", "SUB_MOD_RSD", "num_control", "cancer")
 complex_pair_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/compile_enzyme_substrate/tables/parse_corum_signor_reactome/sup_complex_pair_uniq.txt", data.table = F)
 print(nrow(complex_pair_tab))
 
-mut_cnv_cans <- NULL
-for (cancer in c("BRCA", "OV", "CO", "UCEC")) {
-  if (cancer %in% cancers_sort) {
-    pro_data <- loadProteinNormalizedTumor(cancer = cancer)
-    pho_data <- loadPhosphositeNormalizedTumor(cancer = cancer)
-    sampIDs <- colnames(pho_data)[!(colnames(pho_data) %in% c("Gene", "Phosphosite"))]
-    pho_data <- pho_data[rowSums(!is.na(pho_data[, sampIDs])) >= (num_control_thres + num_genoalt_thres),]
-    pho_head <- formatPhosphosite(pho_data$Phosphosite, pho_data$Gene)
-    partIDs <- sampID2partID(sampleID_vector = sampIDs, sample_map = loadSampMap())
-    names(pho_data) <- c("Gene", "Phosphosite", partIDs)
-    names(pro_data) <- c("Gene", partIDs)
-  }
-  if (cancer == "UCEC") {
-    ## input phosphorylation data
-    pro_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/UCEC_V1/UCEC_proteomics_V1.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
-    pro_data <- data.frame(pro_data)
-    colnames(pro_data)[1] <- "Gene"
-    
-    pho_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/UCEC_V1/UCEC_phosphoproteomics_site_level_V1.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
-    pho_data <- data.frame(pho_data)
-    pho_head <- data.frame(str_split_fixed(string = pho_data$idx, pattern = "-", n = 2))
-    colnames(pho_head) <- c("SUBSTRATE", "SUB_MOD_RSD")
-    
-    samples <- colnames(pro_data)[!(colnames(pro_data) %in% c("idx")) & !grepl(pattern = "Mix", x = (colnames(pro_data)))  & !grepl(pattern = "rep", x = (colnames(pro_data)))]
-    samples <- samples[grepl(pattern = paste0('\\.', toupper(substr(x = sample_type, start = 1, stop = 1))), x = samples)]
-    sampIDs <- samples
-    tmp <- str_split_fixed(string = samples, pattern = "\\.", n = 3)
-    partIDs <- paste0(tmp[,1], "-", tmp[,2])
-    
-    pho_data <- pho_data[, sampIDs]
-    colnames(pho_data) <- partIDs
-    
-    pro_data <- pro_data[, c("Gene", sampIDs)]
-    colnames(pro_data) <- c("Gene", partIDs)
-  }
-
+# for (cancer in c("BRCA", "OV", "CO", "UCEC")) {
+for (cancer in c("CCRCC")) {
+  pro_data <- loadParseProteomicsData(data_type = "PRO", cancer = cancer, sample_type = "tumor")
+  partIDs <- colnames(pro_data)[!(colnames(pro_data) %in% c("Gene"))]
+  
   ## input somatic mutation matrix
-  mut_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_mutation_matrix/", cancer, "_somatic_mutation_in_enzyme_substrate.txt"), data.table = F)
+  mut_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_mutation_matrix/", cancer, "_somatic_mutation.txt"), data.table = F)
   
   ## get the overlap of the participant IDs
   partIDs_overlap <- intersect(partIDs, colnames(mut_mat))
@@ -127,26 +97,14 @@ for (cancer in c("BRCA", "OV", "CO", "UCEC")) {
   mut_cnv_tab$cancer <- cancer
   mut_cnv_tab$pair_pro <- paste0(mut_cnv_tab$geneA, ":", mut_cnv_tab$geneB)
   mut_cnv_tab$pair <- paste0(mut_cnv_tab$geneA, ":", mut_cnv_tab$geneB, ":", mut_cnv_tab$SUB_MOD_RSD)
-
-  ## filter mutation-impacted kinase-substrate pairs
-  mut_tab <- mut_cnv_tab
-  mut_tab <- mut_tab[mut_tab$p_mut > 0,]
-  
-  ## format the mutation table
-  mut_tab.f <- mut_tab[, c(id_vars, paste0(paste0(prefix_vars, "", sep = "_"), "mut"), "pair")]
-  colnames(mut_tab.f) <- c(id_vars, prefix_vars, "pair")
-  mut_tab.f$genoalt_type <- "mut"
-  
-  mut_cnv_can <- mut_tab.f
-  mut_cnv_cans <- rbind(mut_cnv_cans, mut_cnv_can)
-  mut_cnv_cans <- unique(mut_cnv_cans)
-  
   write.table(x = mut_cnv_tab, file = paste0(makeOutDir(resultD = resultD), cancer, "_mut_cnv_tab.txt"), col.names = T, row.names = F, quote = F)
 }
 
+
+
 # parse all cancers -------------------------------------------------------
 mut_cnv_cans <- NULL
-for (cancer in c("BRCA", "OV", "CO", "UCEC")) {
+for (cancer in c("BRCA", "OV", "CO", "UCEC", "CCRCC")) {
   mut_cnv_tab <- fread(file = paste0(makeOutDir(resultD = resultD), cancer, "_mut_cnv_tab.txt"), data.table = F)
   ## filter mutation-impacted kinase-substrate pairs
   mut_tab <- mut_cnv_tab

@@ -62,7 +62,7 @@ for (enzyme_type in c("kinase")) {
       sup_cans_tab_en$regulated <- (sup_cans_tab_en$fdr_sig & sup_cans_tab_en$coef_sig)
       # sup_cans_tab_en_reg <- sup_cans_tab_en[sup_cans_tab_en$regulated,]
       
-      for (self in "cis") {
+      for (self in "trans") {
         # tab_self <- sup_cans_tab_en_reg
         tab_self <- sup_cans_tab_en
         tab_self <- tab_self[tab_self$SELF == self, ]
@@ -71,7 +71,7 @@ for (enzyme_type in c("kinase")) {
         }
         tab_self_path <- tab_self
 
-        for (gene in c("ERBB2", "AKT1", "GSK3B", "BRAF", "EGFR", "IGF1R", "MET")) {
+        for (gene in c("RAF1")) {
         # for (gene in c("ERBB2")) {
           subdir4 <- paste0(subdir3, gene, "/")
           dir.create(subdir4)
@@ -118,93 +118,99 @@ for (enzyme_type in c("kinase")) {
           }
 
           
-          # for (cancer in unique(tab_gene$Cancer)) {
-          #   ## make scatterplots
-          #   if (self == "cis") {
-          #     pro <- loadProteinNormalizedTumor(cancer = cancer)
-          #     pho <- loadPhosphositeNormalizedTumor(cancer = cancer)
-          #     pho_head <- formatPhosphosite(phosphosite_vector = as.vector(pho$Phosphosite), gene_vector = as.vector(pho$Gene))
-          #     
-          #     for (enzyme in unique(tab_gene$GENE)) {
-          #       tab_en <- tab_gene[tab_gene$GENE == enzyme & tab_gene$Cancer == cancer, ]
-          #       tab_en$site <- paste0(tab_en$SUB_GENE, "_", tab_en$SUB_MOD_RSD)
-          #       pro_en <- pro[pro$Gene == enzyme,]
-          #       pro_en.m <- melt(pro_en)
-          #       colnames(pro_en.m) <- c("GENE", "sampID", "pro_en")
-          #       
-          #       pho_sub <- cbind(pho, pho_head)[pho_head$SUBSTRATE == gene & pho_head$SUB_MOD_RSD %in% tab_gene$SUB_MOD_RSD[tab_gene$GENE == enzyme],]
-          #       pho_sub.m <- melt(pho_sub)
-          #       colnames(pho_sub.m) <- c("SUB_GENE", "Phosphosite", "transcript", "SUB_MOD_RSD", "substrate" , "sampID", "pho_sub")
-          #       
-          #       ## merge phosphorylation data together
-          #       tab4plot <- merge(pro_en.m[, c("GENE", "sampID", "pro_en")], pho_sub.m[, c("SUB_GENE", "SUB_MOD_RSD", "sampID", "pho_sub")], by = c("sampID"), all = T)
-          #       if (cancer == "BRCA") {
-          #         tab4plot$subtype <- sampID2pam50(sampleID_vector = as.vector(tab4plot$sampID), pam50_map = pam50_map, sample_map = loadSampMap())
-          #       } else if (cancer == "CO") {
-          #         tab4plot$subtype <- sampID2MSI(sampleID_vector = as.vector(tab4plot$sampID), subtype_map = loadMSIMap(), sample_map = loadSampMap())
-          #       } else {
-          #         tab4plot$subtype <- ""
-          #       }
-          #       for (rsd in unique(tab_en$SUB_MOD_RSD)) {
-          #         tab4plot_facet_y <- tab4plot[tab4plot$SUB_MOD_RSD == rsd,]
-          #         tab4plot_facet_y$facet_y <- paste0(gene, "_", rsd)
-          #         p <- ggplot()
-          #         p <- p + geom_point(data = tab4plot_facet_y, mapping = aes(x = pro_en, y = pho_sub, color = subtype), alpha = 0.8, shape = 16, stroke = 0)
-          #         p <- p + facet_grid(facet_y~., scales = "fixed", space = "fixed")
-          #         p <- p + theme_minimal() + theme(panel.background = element_rect(fill = brewer.pal(9, "Greys")[2], size = 0))
-          #         p <- p + scale_color_manual(values = brewer.pal(n = 6, name = "Set1"))
-          #         p <- p + xlab(paste0(enzyme, " protein level (", cancer, ")")) + ylab(paste0(gene, " phosphosite level"))
-          #         p <- p + theme(strip.text.y = element_text(size = 10, face = "bold"))
-          #         p <- p + theme(axis.title.x = element_text(size = 12, face = "bold"), axis.title.y = element_text(size = 12, face = "bold"))
-          #         p
-          #         ggsave(filename = paste0(subdir4, cancer, "_", enzyme, "_", gene, "_", rsd, "_scatterplots.pdf"),
-          #                width = 4, height = pdf_sizes_per_yfacet[[as.character(length(unique(tab4plot_facet_y$facet_y)))]])
-          #       }
-          #     }
-          #   }
-          #   if (self == "trans") {
-          #     phog <- loadPhosphoproteinNormalizedTumor(cancer = cancer)
-          #     pho <- loadPhosphositeNormalizedTumor(cancer = cancer)
-          #     pho_head <- formatPhosphosite(phosphosite_vector = as.vector(pho$Phosphosite), gene_vector = as.vector(pho$Gene))
-          #     
-          #     for (enzyme in unique(tab_gene$GENE[tab_gene$Cancer == cancer & tab_gene$regulated])) {
-          #       tab_en <- tab_gene[tab_gene$GENE == enzyme & tab_gene$Cancer == cancer, ]
-          #       tab_en$site <- paste0(tab_en$SUB_GENE, "_", tab_en$SUB_MOD_RSD)
-          #       phog_en <- phog[phog$Gene == enzyme,]
-          #       phog_en.m <- melt(phog_en)
-          #       colnames(phog_en.m) <- c("GENE", "sampID", "pho_en")
-          #       
-          #       pho_sub <- cbind(pho, pho_head)[pho_head$SUBSTRATE == gene & pho_head$SUB_MOD_RSD %in% tab_gene$SUB_MOD_RSD[tab_gene$GENE == enzyme],]
-          #       pho_sub.m <- melt(pho_sub)
-          #       colnames(pho_sub.m) <- c("SUB_GENE", "Phosphosite", "transcript", "SUB_MOD_RSD", "substrate" , "sampID", "pho_sub")
-          #       
-          #       ## merge phosphorylation data together
-          #       tab4plot <- merge(phog_en.m[, c("GENE", "sampID", "pho_en")], pho_sub.m[, c("SUB_GENE", "SUB_MOD_RSD", "sampID", "pho_sub")], by = c("sampID"), all = T)
-          #       if (cancer == "BRCA") {
-          #         tab4plot$subtype <- sampID2pam50(sampleID_vector = as.vector(tab4plot$sampID), pam50_map = pam50_map, sample_map = loadSampMap())
-          #       } else if (cancer == "CO") {
-          #         tab4plot$subtype <- sampID2MSI(sampleID_vector = as.vector(tab4plot$sampID), subtype_map = loadMSIMap(), sample_map = loadSampMap())
-          #       } else {
-          #         tab4plot$subtype <- ""
-          #       }
-          #       for (rsd in unique(tab_en$SUB_MOD_RSD[tab_en$regulated])) {
-          #         tab4plot_facet_y <- tab4plot[tab4plot$SUB_MOD_RSD == rsd,]
-          #         tab4plot_facet_y$facet_y <- paste0(gene, "_", rsd)
-          #         p <- ggplot()
-          #         p <- p + geom_point(data = tab4plot_facet_y, mapping = aes(x = pho_en, y = pho_sub, color = subtype), alpha = 0.8, shape = 16, stroke = 0)
-          #         p <- p + facet_grid(facet_y~., scales = "fixed", space = "fixed")
-          #         p <- p + theme_minimal() + theme(panel.background = element_rect(fill = brewer.pal(9, "Greys")[2], size = 0))
-          #         p <- p + scale_color_manual(values = brewer.pal(n = 6, name = "Set1"))
-          #         p <- p + xlab(paste0(enzyme, " phosphorylation level (", cancer, ")")) + ylab(paste0(gene, " phosphosite level"))
-          #         p <- p + theme(strip.text.y = element_text(size = 10, face = "bold"))
-          #         p <- p + theme(axis.title.x = element_text(size = 12, face = "bold"), axis.title.y = element_text(size = 12, face = "bold"))
-          #         p
-          #         ggsave(filename = paste0(subdir4, cancer, "_", enzyme, "_", gene, "_", rsd, "_scatterplots.pdf"),
-          #                width = 4, height = pdf_sizes_per_yfacet[[as.character(length(unique(tab4plot_facet_y$facet_y)))]])
-          #       }
-          #     }
-          #   }
-          # }
+          for (cancer in unique(tab_gene$Cancer)) {
+            ## make scatterplots
+            if (self == "cis") {
+              pro <- loadProteinNormalizedTumor(cancer = cancer)
+              pho <- loadPhosphositeNormalizedTumor(cancer = cancer)
+              pho_head <- formatPhosphosite(phosphosite_vector = as.vector(pho$Phosphosite), gene_vector = as.vector(pho$Gene))
+
+              # for (enzyme in unique(tab_gene$GENE)) {
+              for (enzyme in "RAF1") {
+                  
+                tab_en <- tab_gene[tab_gene$GENE == enzyme & tab_gene$Cancer == cancer, ]
+                tab_en$site <- paste0(tab_en$SUB_GENE, "_", tab_en$SUB_MOD_RSD)
+                pro_en <- pro[pro$Gene == enzyme,]
+                pro_en.m <- melt(pro_en)
+                colnames(pro_en.m) <- c("GENE", "sampID", "pro_en")
+
+                pho_sub <- cbind(pho, pho_head)[pho_head$SUBSTRATE == gene & pho_head$SUB_MOD_RSD %in% tab_gene$SUB_MOD_RSD[tab_gene$GENE == enzyme],]
+                pho_sub.m <- melt(pho_sub)
+                colnames(pho_sub.m) <- c("SUB_GENE", "Phosphosite", "transcript", "SUB_MOD_RSD", "substrate" , "sampID", "pho_sub")
+
+                ## merge phosphorylation data together
+                tab4plot <- merge(pro_en.m[, c("GENE", "sampID", "pro_en")], pho_sub.m[, c("SUB_GENE", "SUB_MOD_RSD", "sampID", "pho_sub")], by = c("sampID"), all = T)
+                if (cancer == "BRCA") {
+                  tab4plot$subtype <- sampID2pam50(sampleID_vector = as.vector(tab4plot$sampID), pam50_map = pam50_map, sample_map = loadSampMap())
+                } else if (cancer == "CO") {
+                  tab4plot$subtype <- sampID2MSI(sampleID_vector = as.vector(tab4plot$sampID), subtype_map = loadMSIMap(), sample_map = loadSampMap())
+                } else {
+                  tab4plot$subtype <- ""
+                }
+                for (rsd in unique(tab_en$SUB_MOD_RSD)) {
+                  tab4plot_facet_y <- tab4plot[tab4plot$SUB_MOD_RSD == rsd,]
+                  tab4plot_facet_y$facet_y <- paste0(gene, "_", rsd)
+                  p <- ggplot()
+                  p <- p + geom_point(data = tab4plot_facet_y, mapping = aes(x = pro_en, y = pho_sub, color = subtype), alpha = 0.8, shape = 16, stroke = 0)
+                  p <- p + facet_grid(facet_y~., scales = "fixed", space = "fixed")
+                  p <- p + theme_minimal() + theme(panel.background = element_rect(fill = brewer.pal(9, "Greys")[2], size = 0))
+                  p <- p + scale_color_manual(values = brewer.pal(n = 6, name = "Set1"))
+                  p <- p + xlab(paste0(enzyme, " protein level (", cancer, ")")) + ylab(paste0(gene, " phosphosite level"))
+                  p <- p + theme(strip.text.y = element_text(size = 10, face = "bold"))
+                  p <- p + theme(axis.title.x = element_text(size = 12, face = "bold"), axis.title.y = element_text(size = 12, face = "bold"))
+                  p
+                  ggsave(filename = paste0(subdir4, cancer, "_", enzyme, "_", gene, "_", rsd, "_scatterplots.pdf"),
+                         width = 3, height = pdf_sizes_per_yfacet[[as.character(length(unique(tab4plot_facet_y$facet_y)))]])
+                }
+              }
+            }
+            if (self == "trans") {
+              phog <- loadPhosphoproteinNormalizedTumor(cancer = cancer)
+              pho <- loadPhosphositeNormalizedTumor(cancer = cancer)
+              pho_head <- formatPhosphosite(phosphosite_vector = as.vector(pho$Phosphosite), gene_vector = as.vector(pho$Gene))
+
+              # for (enzyme in unique(tab_gene$GENE[tab_gene$Cancer == cancer & tab_gene$regulated])) {
+              for (enzyme in c("PPP1CC")) {
+                
+                tab_en <- tab_gene[tab_gene$GENE == enzyme & tab_gene$Cancer == cancer, ]
+                tab_en$site <- paste0(tab_en$SUB_GENE, "_", tab_en$SUB_MOD_RSD)
+                phog_en <- phog[phog$Gene == enzyme,]
+                phog_en.m <- melt(phog_en)
+                colnames(phog_en.m) <- c("GENE", "sampID", "pho_en")
+
+                pho_sub <- cbind(pho, pho_head)[pho_head$SUBSTRATE == gene & pho_head$SUB_MOD_RSD %in% tab_gene$SUB_MOD_RSD[tab_gene$GENE == enzyme],]
+                pho_sub.m <- melt(pho_sub)
+                colnames(pho_sub.m) <- c("SUB_GENE", "Phosphosite", "transcript", "SUB_MOD_RSD", "substrate" , "sampID", "pho_sub")
+
+                ## merge phosphorylation data together
+                tab4plot <- merge(phog_en.m[, c("GENE", "sampID", "pho_en")], pho_sub.m[, c("SUB_GENE", "SUB_MOD_RSD", "sampID", "pho_sub")], by = c("sampID"), all = T)
+                if (cancer == "BRCA") {
+                  tab4plot$subtype <- sampID2pam50(sampleID_vector = as.vector(tab4plot$sampID), pam50_map = pam50_map, sample_map = loadSampMap())
+                } else if (cancer == "CO") {
+                  tab4plot$subtype <- sampID2MSI(sampleID_vector = as.vector(tab4plot$sampID), subtype_map = loadMSIMap(), sample_map = loadSampMap())
+                } else {
+                  tab4plot$subtype <- ""
+                }
+                for (rsd in unique(tab_en$SUB_MOD_RSD[tab_en$regulated])) {
+                  tab4plot_facet_y <- tab4plot[tab4plot$SUB_MOD_RSD == rsd,]
+                  tab4plot_facet_y$facet_y <- paste0(gene, "_", rsd)
+                  p <- ggplot()
+                  p <- p + geom_point(data = tab4plot_facet_y, mapping = aes(x = pho_en, y = pho_sub), alpha = 0.8, shape = 16, stroke = 0, color = "grey50")
+                  p <- p + facet_grid(facet_y~., scales = "fixed", space = "fixed")
+                  p <- p + theme_minimal() + theme(panel.background = element_rect(fill = brewer.pal(9, "Greys")[2], size = 0))
+                  p <- p + scale_color_manual(values = brewer.pal(n = 6, name = "Set1"))
+                  p <- p + xlab(paste0(enzyme, " phosphorylation level (", cancer, ")")) + ylab(paste0(gene, " phosphosite level"))
+                  p <- p + theme(strip.text.y = element_text(size = 10, face = "bold"))
+                  p <- p + theme(axis.title.x = element_text(size = 12, face = "bold"), axis.title.y = element_text(size = 12, face = "bold"))
+                  p <- p + theme_bw()
+                  p
+                  ggsave(filename = paste0(subdir4, cancer, "_", enzyme, "_", gene, "_", rsd, "_scatterplots.pdf"),
+                         width = 3, height = pdf_sizes_per_yfacet[[as.character(length(unique(tab4plot_facet_y$facet_y)))]])
+                  
+                }
+              }
+            }
+          }
         }
       }
     }

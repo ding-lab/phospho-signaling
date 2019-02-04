@@ -1,0 +1,1777 @@
+---
+title: "mut_impact_proteome"
+output: html_document
+---
+## source
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source('~/Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R')
+ppnD <- "~/Box Sync/cptac2p/analysis_results/phospho_network/"
+library(dplyr)
+num_genoalt_thres <- 4
+```
+
+## inputs
+``` {r inputs-kown-ks-table}
+## input enzyme-substrate table
+ptms_site_pairs_sup <- read_csv(paste0(ppnD, "compile_enzyme_substrate/tables/compile_omnipath_networkin_depod_signor_manual/Omnipath_NetworKin_DEPOD_SignorNotSiteMapped_manualAdded.csv"))
+ptms_site_pairs_sup <- data.frame(ptms_site_pairs_sup)
+### take out pairs that are purely computationally predicted
+ptms_site_pairs_sup <- ptms_site_pairs_sup[!(ptms_site_pairs_sup$Source %in% c("NetKIN", "PhosphoNetworks", "MIMP")) ,]
+ptms_site_pairs_sup$pair <- paste0(ptms_site_pairs_sup$pair_pro, ":", ptms_site_pairs_sup$SUB_MOD_RSD)
+ptms_site_pairs_sup$pair_pro_rev <- paste0(ptms_site_pairs_sup$SUB_GENE, ":",  ptms_site_pairs_sup$GENE)
+```
+
+``` {r input-mut-impact-proteome-table-across-cancers}
+mut_cnv_cans <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_impact_proteome/mut_impact_proteome_cptac2p_cptac3_tab.txt"), data.table = F, sep = "\t")
+mut_cnv_cans <- mut_cnv_cans[mut_cnv_cans$num >= num_genoalt_thres,]
+mut_cnv_cans$pair %>% head()
+mut_cnv_cans <- merge(mut_cnv_cans, ptms_site_pairs_sup[, c("pair", "Source")], by = c("pair"), all.x = T)
+mut_cnv_cans$pair_pro <- paste0(mut_cnv_cans$GENE, ":",  mut_cnv_cans$SUB_GENE)
+```
+
+``` {r annotate-mut-impact-table-with-kinase/phosphatase}
+mut_cnv_cans$SUB_GENE_role <- "complex_partner"
+mut_cnv_cans$SUB_GENE_role[mut_cnv_cans$pair_pro %in% ptms_site_pairs_sup$pair_pro] <- "substrate"
+mut_cnv_cans$SUB_GENE_role[mut_cnv_cans$pair_pro %in% ptms_site_pairs_sup$pair_pro_rev[ptms_site_pairs_sup$GENE %in% kinases]] <- "kinase"
+mut_cnv_cans$SUB_GENE_role[mut_cnv_cans$pair_pro %in% ptms_site_pairs_sup$pair_pro_rev[!(ptms_site_pairs_sup$GENE %in% kinases)]] <- "phosphatase"
+```
+
+``` {r annotate-mut-impact-table-with-protein-effect}
+mut_cnv_cans_pho <- merge(mut_cnv_cans[mut_cnv_cans$SUB_MOD_RSD != "PRO",],
+                          mut_cnv_cans[mut_cnv_cans$SUB_MOD_RSD == "PRO", c("GENE", "SUB_GENE", "cancer", "variant_class", "num", "num_control", "p", "meddiff")],
+                          by = c("GENE", "SUB_GENE","cancer", "variant_class"), all.x = T, suffixes = c("", ".pro"))
+
+```
+
+
+
+``` {r classify-mutation-impact-phospho-trans-events-by-upstream-downstream-interacting_partners}
+mut_cnv_cans$pair_pro <- paste0(mut_cnv_cans$GENE, ":", mut_cnv_cans$SUB_GENE)
+mut_cnv_cans$pair_pro_rev <- paste0(mut_cnv_cans$SUB_GENE, ":", mut_cnv_cans$GENE)
+
+mut_cnv_cans$pair_class <- "complex"
+mut_cnv_cans$pair_class[mut_cnv_cans$pair_pro %in% ptms_site_pairs_sup$pair_pro] <- "downstream"
+mut_cnv_cans$pair_class[mut_cnv_cans$pair_pro_rev %in% ptms_site_pairs_sup$pair_pro] <- "upstream"
+mut_cnv_cans$pair_class[mut_cnv_cans$SELF == "cis"] <- "cis"
+mut_cnv_cans %>%
+  select(pair_pro, pair_class)
+```
+
+``` {r adjust-pvalue-by-cancer-variant_class-by_altered_gene}
+mut_cnv_cans$expression_type <- mut_cnv_cans$SUB_MOD_RSD
+mut_cnv_cans$expression_type[!(mut_cnv_cans$SUB_MOD_RSD %in% c("RNA", "PRO"))] <- "PHO"
+
+mut_cnv_cans$fdr <- 0
+for (cancer in unique(mut_cnv_cans$cancer)) {
+  for (pair_class in unique(mut_cnv_cans$pair_class)) {
+    for (variant_class  in unique(mut_cnv_cans$variant_class)) {
+      for (expression_type in unique(mut_cnv_cans$expression_type)) {
+        row2adjust <- (mut_cnv_cans$cancer == cancer) & (mut_cnv_cans$pair_class == pair_class) & (mut_cnv_cans$variant_class == variant_class) & (mut_cnv_cans$expression_type == expression_type)
+        mut_cnv_cans$fdr[which(row2adjust)] <- p.adjust(mut_cnv_cans$p[which(row2adjust)], method = "fdr")
+      }
+    }
+  }
+}
+
+```
+
+``` {r how-many-trans-events-overlap-cis-events}
+cis_genes <- mut_cnv_cans %>%
+  filter(SELF == "cis", p < 0.05) %>%
+  select(GENE, cancer) %>%
+  unique()
+cis_genes$cis <- TRUE
+
+mut_cnv_cans_trans <- mut_cnv_cans %>%
+  filter(SUB_MOD_RSD != "PRO" & SELF == "trans" & p < 0.05)
+mut_cnv_cans_trans %>%
+  head
+
+mut_cnv_cans_trans <- merge(mut_cnv_cans_trans, cis_genes, by = c("GENE", "cancer"))
+mut_cnv_cans_trans %>%
+  select(pair, cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_cnv_cans_trans %>%
+  select(pair, cancer, pair_class) %>%
+  unique() %>%
+  select(pair_class) %>%
+  table
+
+```
+    
+``` {r how-many-cis-events-affecting-genes-do-not-have-trans-events}
+
+```
+
+``` {r load-regression-result}
+## load regression table
+reg_nonNA <- 20
+enzyme_type <- "kinase"
+regression <- fread(input = paste0(ppnD, "regression/tables/", "change_regression_nonNA/", 
+                                   "regression", "_", "cptac2p_cptac3", "_", "tumor", "_reg_nonNA", reg_nonNA, ".txt"), data.table = F)
+regression <- markSigSiteCan(regression = regression, sig_thres = 0.05, enzyme_type = enzyme_type)
+regression$rsd <- paste0(regression$SUB_GENE, "_", regression$SUB_MOD_RSD)
+regression$rsd[regression$SELF == "cis" & regression$fdr_sig & regression$coef_sig] %>% head
+regression$regulated <- (regression$fdr_sig & regression$coef_sig)
+regression$pair_pro <- paste0(regression$GENE, ":", regression$SUB_GENE)
+regression$pair_site <- paste0(regression$pair_pro, "_", regression$SUB_MOD_RSD)
+regression$aa <- substr(regression$SUB_MOD_RSD, start = 1, stop = 1)
+
+## clean up
+regression <- regression[!(regression$pair_pro %in% c("APC:CTNNB1")),]
+
+cis_detected_sites <- unique(regression$rsd[regression$SELF == "cis"])
+cis_detected_sites %>% length()
+
+cis_regulated_sites <- unique(regression$rsd[regression$SELF == "cis" & regression$fdr_sig & regression$coef_sig])
+cis_regulated_sites %>% length()
+
+trans_detected_sites <- unique(regression$rsd[regression$SELF == "trans"])
+trans_detected_sites %>% length()
+
+trans_regulated_sites <- unique(regression$rsd[regression$SELF == "trans" & regression$fdr_sig & regression$coef_sig])
+trans_regulated_sites %>% length()
+
+regulated_pair_pro <- unique(regression$pair_pro[regression$regulated])
+detected_pair_pro <- unique(regression$pair_pro)
+
+regulated_pair_site <- unique(regression$pair_site[regression$regulated])
+detected_pair_site <- unique(regression$pair_site)
+```
+
+## cis
+```{r SMGs-affect-phospho-in-cis}
+mut_cnv_cans %>%
+  filter(SELF == "cis", SUB_MOD_RSD != "PRO", p < 0.05)  %>%
+  select(GENE) %>%
+  unique()
+
+cis_genes <- mut_cnv_cans %>%
+  filter(GENE %in% unlist(SMGs), SELF == "cis", SUB_MOD_RSD != "PRO", p < 0.05)  %>%
+  select(GENE) %>%
+  unique()
+
+
+cis_genes
+cis_genes$GENE[cis_genes$GENE %in% oncogenes]
+
+cis_genes$GENE[cis_genes$GENE %in% tsgs]
+
+```
+
+## TP53
+``` {r get-TP53-cis-result}
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "cis", SUB_MOD_RSD != "PRO")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "cis", SUB_MOD_RSD == "PRO")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+```
+
+``` {r get-TP53-kinase-result}
+gene <- "TP53"
+gene_pk <- unique(ptms_site_pairs_sup$GENE[ptms_site_pairs_sup$SUB_GENE == "TP53" & ptms_site_pairs_sup$enzyme_type == "kinase" & ptms_site_pairs_sup$GENE != "CCNA2"])
+gene_pk %>% length()
+"GSK3B" %in% gene_pk
+gene_pk_wdat <- gene_pk[gene_pk %in% mut_cnv_cans$SUB_GENE[mut_cnv_cans$GENE == gene]]
+gene_pk_wdat %>% head()
+gene_pk_wdat %>% length()
+
+gene_pk_sig <- gene_pk[gene_pk %in% mut_cnv_cans$SUB_GENE[mut_cnv_cans$GENE == gene & mut_cnv_cans$p < 0.05]]
+gene_pk_sig %>% length()
+gene_pk_sig %>% sort()
+```
+
+``` {r TP53-up-kinase}
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_GENE %in% gene_pk_sig, p < 0.05, meddiff > 0)  %>%
+  select(SUB_GENE) %>%
+  unique()
+
+## select the following kinases to focus
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_GENE %in% c("ATM", "ATR", "CHEK1", "CHEK2", "AURKA", "CDK2"), p < 0.05)  %>%
+  select(cancer) %>%
+  unique()
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_GENE %in% c("AURKA"), p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(SUB_GENE %in% c("TP53"), GENE == "AURKA", SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_GENE %in% c("CDK2"), p <0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(SUB_GENE %in% c("TP53"), GENE == "CDK2", SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_GENE %in% c("CHEK2"), p <0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(SUB_GENE %in% c("TP53"), GENE == "CHEK2", SELF == "trans") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer) %>%
+  arrange(FDR_pho_kin)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_GENE %in% c("ATM"), p <0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(SUB_GENE %in% c("CHEK2"), GENE == "ATM", SELF == "trans") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(SUB_GENE %in% c("TP53"), GENE == "ATM", SELF == "trans") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer) %>%
+  arrange(FDR_pho_kin)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_GENE %in% c("CHEK1"), p <0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(SUB_GENE %in% c("TP53"), GENE == "CHEK1", SELF == "trans") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer) %>%
+  arrange(FDR_pho_kin)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_GENE %in% c("ATR"), p <0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(SUB_GENE %in% c("TP53"), GENE == "ATR", SELF == "trans") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(SUB_GENE %in% c("CHEK1"), GENE == "ATR", SELF == "trans") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(SUB_GENE %in% c("CHEK1", "CHEK2", "TP53", "ATM", "ATR", "TP53"), GENE %in% c("CHEK1", "CHEK2", "TP53", "ATM", "ATR"), SELF == "trans", FDR_pho_kin < 0.1) %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(SUB_GENE %in% c("TP53"), SELF == "trans", FDR_pho_kin < 0.1) %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer) %>%
+  arrange(FDR_pho_kin)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "cis", SUB_MOD_RSD != "PRO", p < 0.1)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_GENE %in% c("IKBKB", "MAPKAPK5", cancer == "BRCA"), p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+```
+
+``` {r TP53-phosphatase}
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_GENE %in% c("PPP2CA", "PPP2CB"), p <0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+```
+
+
+``` {r TP53-phosphatase}
+gene_pp <- unique(ptms_site_pairs_sup$GENE[ptms_site_pairs_sup$SUB_GENE == "TP53" & ptms_site_pairs_sup$enzyme_type == "phosphatase"])
+gene_pp %>% length()
+gene_pp_wdat <- gene_pp[gene_pp %in% mut_cnv_cans$SUB_GENE[mut_cnv_cans$GENE == gene]]
+gene_pp_wdat %>% length()
+gene_pp_wdat
+gene_pp_sig <- gene_pp[gene_pp %in% mut_cnv_cans$SUB_GENE[mut_cnv_cans$GENE == gene & mut_cnv_cans$p < 0.05]]
+gene_pp_sig %>% length()
+gene_pp_sig
+
+phosphatase2p <- c("PPM1D", "PPP1CC", "PPP1CA", "PPP1CB", "PPP2CB", "PPP2CA", "CDC14A")
+
+TP53_complex <- un
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_MOD_RSD != "PRO", p <0.05)  %>%
+  select(SUB_GENE, SUB_MOD_RSD) %>%
+  unique() %>%
+  select(SUB_GENE) %>%
+  table()
+
+```
+
+``` {r TP53-TP53BP1}
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_MOD_RSD != "PRO", SUB_GENE == "TP53BP1")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_MOD_RSD == "PRO", SUB_GENE == "TP53BP1")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_MOD_RSD == "PRO", SUB_GENE == "TP53BP1", variant_class == "truncation")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_MOD_RSD == "PRO", SUB_GENE == "TP53BP1", variant_class == "missense")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53", SELF == "trans", SUB_MOD_RSD != "PRO", SUB_GENE == "TP53BP1", variant_class == "truncation")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(SUB_GENE %in% c("TP53", "ATM", "ATR", "CHEK2", "CHEK1"), GENE %in% c("ATM", "ATR", "CHEK2", "CHEK1"), SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(SUB_GENE %in% c("TP53"), SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+```
+
+``` {r get-TP53-downstream-mutation-impact-proteome-result}
+TP53_downstream <- c("BAD", "BAX", "BCL2L1", "BCL2", "CDKN1A")
+
+mut_cnv_cans %>%
+  filter(GENE == "TP53" & SUB_GENE %in% TP53_downstream)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(GENE %in% c("AKT1"), SUB_GENE %in% AKT1_substrates, SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(GENE %in% c("GSK3B"), SELF == "trans", regulated == TRUE) %>%
+  arrange(FDR_pho_kin)
+
+GSK3B_substrates <- c("CTNNB1", "MYC", "CCND1", "APC", "AXIN1")
+regression %>%
+  filter(GENE == "GSK3B", SUB_GENE %in% GSK3B_substrates, SELF == "trans", regulated == TRUE) %>%
+  arrange(FDR_pho_kin)
+
+
+ mut_cnv_cans %>%
+  filter(GENE == "AKT1" & SUB_GENE %in% GSK3B_substrates) %>%
+      select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+
+```
+
+
+## PI3K
+``` {r PI3K-cis}
+mut_cnv_cans %>%
+  filter(GENE %in% c("PIK3CA", "PIK3R1", "PTEN", "AKT1", "ERBB2", "EGFR", "IGF1R"), 
+         SUB_GENE %in% c("PIK3CA", "PIK3R1", "PTEN", "AKT1", "ERBB2", "EGFR", "IGF1R"), 
+         p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("PIK3R1"), p < 0.05, SELF == "cis", SUB_MOD_RSD == "PRO")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+ptms_site_pairs_sup[ptms_site_pairs_sup$SUB_GENE == "PIK3R1",]
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("PTEN"),
+         SELF == "cis")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("PTEN"), p < 0.05, SELF == "trans", SUB_MOD_RSD == "PRO")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+```
+
+
+``` {r get-AKT1-related-mutation-impact-proteome-result}
+AKT1_upstream <- c("PDK1", "PIK3CA", "PIK3R1", "KRAS", "JAK1", "STAT1", "STAT3", "ERBB2", "EGFR", "IGF1R", "IRS1", "PTEN", "MTOR", "RICTOR", "PPP2CA", "PPP2R1A")
+
+## trans effect
+mut_cnv_cans %>%
+  filter(SUB_GENE %in% c("AKT1"), GENE %in% AKT1_upstream, SELF == "trans", p < 0.05) %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% AKT1_upstream, SUB_GENE %in% AKT1_upstream) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% AKT1_upstream, SELF == "cis") %>%
+    select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(SUB_GENE %in% c("AKT1"), SELF == "trans", p < 0.05, num > 4) %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+## conclusion: upstream to AKT1 is not clear
+
+```
+
+
+``` {r get-AKT1-downstream-mutation-impact-proteome-result}
+mut_cnv_cans %>%
+  filter(GENE == "AKT1" & SELF == "cis")  %>%
+  arrange(p)
+## no cis effect of AKT1
+AKT1_substrates <- c("BAD", "CASP9", "IKBKB", "FOXO1", "FOXO3", "MDM2", "GSK3B", "FOXO4", "CDKN1A", "TSC1", "TSC2", "CDKN1A", "CDKN1B", "XIAP", "MDM2", "MTOR", "RPTOR", "HK1", "SLC2A1", "GLUT1", "GLUT2", "GLT4")
+
+mut_cnv_cans %>%
+  filter(GENE == "AKT1", !is.na(Source))  %>%
+  select(pair, Source, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE == "AKT1" & SUB_GENE %in% AKT1_substrates, p < 0.2)  %>%
+  select(pair, Source, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(GENE %in% c("AKT1"), SUB_GENE %in% AKT1_substrates, SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(pair == "AKT1:BAD:S99", SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(pair == "AKT1:LMNA:S301", SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(pair == "AKT1:FAM129A:S602", SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter( GENE == "AKT1", !is.na(Source), SELF == "trans", FDR_pho_kin < 0.05, coef_pho_kin > 0, !(Source %in% c("NetKIN", "PhosphoNetworks", "MIMP"))) %>%
+  arrange(FDR_pho_kin)
+
+mut_cnv_cans %>%
+  filter(GENE %in% AKT1_upstream, SUB_GENE %in% AKT1_substrates, p < 0.05)  %>%
+  select(pair, Source, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% "PTEN", p < 0.05)  %>%
+  select(pair, Source, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% "PTEN", SUB_GENE == "AKT1")  %>%
+  select(pair, Source, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter( GENE == "GSK3B", SUB_GENE == "PTEN", SELF == "trans", Cancer == "UCEC") %>%
+  arrange(FDR_pho_kin)
+
+mut_cnv_cans %>%
+  filter(SUB_GENE %in% "CTNNB1")  %>%
+  select(pair, Source, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% "CTNNB1", SELF == "trans")  %>%
+  select(pair, Source, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+```
+``` {r GSK3B-downstrea}
+
+
+regression %>%
+  filter( GENE %in% c("ARAF", "RAF1"), SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+
+ mut_cnv_cans %>%
+  filter(GENE %in% c("ARAF", "RAF1")) %>%
+      select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(GENE %in% c("GSK3B"), SELF == "trans", regulated == TRUE) %>%
+  arrange(FDR_pho_kin)
+
+GSK3B_substrates <- c("CTNNB1", "MYC", "CCND1", "APC", "AXIN1")
+regression %>%
+  filter(GENE == "GSK3B", SUB_GENE %in% GSK3B_substrates, SELF == "trans", regulated == TRUE) %>%
+  arrange(FDR_pho_kin)
+
+
+mut_cnv_cans %>%
+  filter(GENE == "AKT1" & SUB_GENE %in% GSK3B_substrates) %>%
+      select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% AKT1_upstream, SUB_GENE %in% AKT1_substrates, SELF == "trans") %>%
+  arrange(p)
+
+regression %>%
+  filter(GENE %in% AKT1_upstream,SUB_GENE %in% AKT1_substrates, SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+```
+## RAS/MAPK
+``` {r RAS/MAPK-cis}
+RAS_MAPK_genes <- c("KRAS", "NRAS", "HRAS",
+                     "BRAF", "ARAF", "RAF1", "MAP4K4",
+                     "MAP3K1", "MAP3K4", "MAP3K5", "MAP3K2", 
+                     "MAP2K1", "MAP2K2", "MAP2K4", "KSR1",
+                     "MAPK1", "MAPK3", "PAK1", "ARHGEF1", "RAlGDS")
+mut_cnv_cans %>%
+  filter(GENE %in% RAS_MAPK_genes, 
+         SELF == "cis", 
+         SUB_MOD_RSD != "PRO", p < 0.05)  %>%
+  select(GENE) %>%
+  unique()
+
+mut_cnv_cans %>%
+  filter(GENE %in% RAS_MAPK_genes, 
+         SELF == "cis", 
+         SUB_MOD_RSD == "PRO", p < 0.05)  %>%
+  select(GENE) %>%
+  unique()
+```
+
+``` {r KRAS-trans}
+mut_cnv_cans %>%
+  filter(GENE %in% c("KRAS"), 
+         SELF == "cis", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## KRAS mutations, mostly missense, only associated with its protein changes and it's going higher in UCEC and CO
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("KRAS"), 
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## KRAS mutations are associated with higher protein levels of its phosphatase PTPN11 (targeting pT32) in CO and higher phosphorylation in UCEC (no significant protein changes)
+## KRAS mutations are associated with higher phosphorylation of TCF3 in UCEC
+## KRAS mutations are associated with lower phosppho of its complex partner HSP90AB1
+
+mut_cnv_cans %>%
+  filter(SUB_GENE == "PTPN11", !(GENE %in% c("KRAS") & SUB_GENE == "PTPN11"),
+         SELF == "trans", p < 0.05, num >= 5, num_control >= 5)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## JAK1 mutations, mostly truncations ~ lower protein of PTPN11 in UCEC
+## Signor says JAK1 up-regulates the activity by phosphorylating pT3004 and pT327 at PTPN11
+## PIK3R1 mutation, half truncations ~ lower protein of PTPN11 in UCEC
+## corum says they form a complex: 2551
+## MAP3K4 mutations ~ lower phospho of PTPN11
+## depod says PTPN11 dephosphorylate MAP3K4
+## MAP3K5 similar to MAP3K4
+## however the boxplot didn't seem impressive
+
+mut_cnv_cans %>%
+  filter(SUB_GENE == "HSP90AB1", !(GENE %in% c("KRAS") & SUB_GENE == "HSP90AB1"),
+         SELF == "trans", p < 0.05, num >= 5, num_control >= 5)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## no other major confounding mutations associated with HSP90AB1, also the boxplot didn't looks so different
+
+
+mut_cnv_cans %>%
+  filter(SUB_GENE == "TCF3", !(GENE %in% c("KRAS") & SUB_GENE == "TCF3"),
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## no other major confounding mutations associated with TCF3
+## signor says actually TCF3 are phosphorylated by ERKs
+## plot didn't seem compelling
+
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("KRAS", "NRAS", "HRAS"), SUB_GENE %in% c("BRAF", "ARAF", "RAF1"),
+         SELF == "trans")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## no compelling stories about KRAS trans effect
+```
+
+``` {r BRAF-trans}
+mut_cnv_cans %>%
+  filter(GENE %in% c("BRAF"), 
+         SELF == "cis", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## BRAF mutations only 5 overalp in cis, associated with higher pS732 in CO
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("BRAF"), SELF == "trans", p < 0.05, num >= 5, num_control >= 5 )  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## BRAF mutations, up to 15 ~ low phospho in PAK1, CNKSR1, KSR1; high protein in MAP2K1, AKT1, YWHAE
+
+mut_cnv_cans %>%
+  filter(SUB_GENE == "MAP2K1" | GENE == "MAP2K1",
+         SELF == "trans")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## Signor and PSP says BRAF phosphorylates MAP2K1 at S218, S222
+## MAP2K1 kinase MAP3K2, complex partner KSR1, substrate IRS1, DVL2 are associated with higher protein/phospho of MAP2K1
+## plot looks ok
+
+regression %>%
+  filter(GENE %in% "MAP2K1", SELF == "trans", FDR_pho_kin < 0.1, Cancer == "CO") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD, FDR_pho_kin)
+## good correlation between MAP2K1 and MAPK1
+
+regression %>%
+  filter(SUB_GENE %in% "MAPK1", SELF == "trans", FDR_pho_kin < 0.1, Cancer == "CO") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD, FDR_pho_kin)
+
+
+mut_cnv_cans %>%
+  filter(SUB_GENE == "MAP2K1" | GENE == "MAP2K1", cancer == "CO", 
+         SELF == "trans")  %>%
+  select(SUB_MOD_RSD) %>%
+  unique()
+## none of the MAP2K1 phosphosites look different from the wildtype
+
+mut_cnv_cans %>%
+  filter(cancer == "CO", num >= 5, p < 0.05,
+         SUB_GENE == "AKT1",SELF == "trans")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## all the really high ones actually carries mutations in PI3K pathway, so inconclusive
+
+mut_cnv_cans %>%
+  filter(cancer == "CO", num >= 5, p < 0.05,
+         SUB_GENE == "YWHAE",SELF == "trans")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## slightly up but not compelling
+
+mut_cnv_cans %>%
+  filter(cancer == "CO", num >= 5, p < 0.05,
+         SUB_GENE == "PAK1",SELF == "trans")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+regression %>%
+  filter(GENE %in% "PAK1", SELF == "trans", FDR_pho_kin < 0.1, Cancer == "CO") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD, FDR_pho_kin)
+
+## a lot of BRAF mutations intersected with PI3K mutations, so inconclusive
+
+mut_cnv_cans %>%
+  filter(cancer == "CO", num >= 5, p < 0.05,
+         SUB_GENE == "CNKSR1",SELF == "trans")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(cancer == "CO", num >= 5, p < 0.05,
+         SUB_GENE == "KSR1",SELF == "trans")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## not compelling
+```
+
+``` {r MAP3K1-trans}
+mut_cnv_cans %>%
+  filter(GENE %in% c("MAP3K1"), 
+         SELF == "cis", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## MAP3K1 protein level was elevated in endometrial tumors carrying MAP3K1 mutations (P-value < 0.05), coupled with 3 up-regulated phosphosites (pS250, pS252, pS292)
+## from plotting didn't look compelling
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("MAP3K1"), cancer == "BRCA",
+         SELF == "cis")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## MAP3K1 protein does not differ between BRCA wild-type and mutatns, however the phosphosite S1455 are significantly down-regulated, while S287 is marginally up-regulated
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("MAP3K1"), p < 0.05, num >= 5,
+         SELF == "trans")  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## MAP3K1 mutations in UCEC also up-regulates MAP2K4 protein, MAP4K1 protein, MAP4K4 S947, PAK1 S155, 
+## MAP3K1 mutations in BRCA up-regulates STAT3 S726 (signor)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("MAP3K1"), p < 0.05,
+         SELF == "trans")  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(SUB_GENE == "STAT3", !(GENE %in% c("MAP3K1") & SUB_GENE == "STAT3"),
+         SELF == "trans", p < 0.05, num >= 5, num_control >= 5)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## MAP3K1 mutations in BRCA up-regulates STAT3 S726 (signor)
+## MAP3K1 is known to phosphorylates STAT3 S726, up-regulates activity in breast cancer
+## signor says Phosphorylation of s727 induces pin1 binding which increases transcription. Pin1 binding increases stat3 interaction with p300 and dna.
+## in endometrial cancer STAT3 pY70 is down-regulated in JAK1 mutated
+
+regression %>%
+  filter(GENE %in% "MAP3K1", SELF == "trans", FDR_pho_kin < 0.1, Cancer == "BRCA") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD, FDR_pho_kin)
+## MAP3K1 and STAT3 not correlated in BRCA
+
+mut_cnv_cans %>%
+  filter(SUB_GENE == "MAP2K4",
+         SELF == "trans", p < 0.05, num >= 5, num_control >= 5)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## no other mutations associated with MAP2K4 protein
+## in colorectal cancers, MAP3K4 mutated samples also have slight up-regulation of MAP2K4 protein
+## from plotting it does look up-regulated
+
+regression %>%
+  filter(GENE %in% "MAP3K1", SELF == "trans", FDR_pho_kin < 0.1, Cancer == "UCEC") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD, FDR_pho_kin)
+## no one correlated with MAP3K1 in UCEC
+
+mut_cnv_cans %>%
+  filter(SUB_GENE == "MAP4K1",
+         SELF == "trans", p < 0.05, num >= 5, num_control >= 5)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## from plotting looks no different
+
+mut_cnv_cans %>%
+  filter(SUB_GENE == "MAP4K4",
+         SELF == "trans", p < 0.05, num >= 5, num_control >= 5)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## from plotting looks no different
+## too few data points
+
+mut_cnv_cans %>%
+  filter(SUB_GENE == "PAK1",
+         SELF == "trans", p < 0.05, num >= 5, num_control >= 5)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## CTNNB1 also affect PAK1 protein levels
+## did look slightly higher in MAP3K1 mutated and CTNNB1 mutated endometrial cancers but not sure why
+
+```
+
+``` {r MAP2K4-trans}
+mut_cnv_cans %>%
+  filter(GENE %in% c("MAP2K4"), 
+         SELF == "cis", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## 4 mutatins in BRCA, down-regulted protein
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("MAP2K4"), p < 0.05,
+         SELF == "trans")  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## MAP2K4 mutations too few
+
+regression %>%
+  filter(GENE %in% "MAP2K4", SELF == "trans", FDR_pho_kin < 0.1, Cancer == "BRCA") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD, FDR_pho_kin)
+
+regression %>%
+  filter(GENE %in% "MAP2K4", SELF == "trans", FDR_pho_kin < 0.1) %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD, FDR_pho_kin)
+
+MAP_kinases_sig <- mut_cnv_cans %>%
+  filter(p < 0.05)  %>%
+  select(GENE) %>%
+  unique()
+MAP_kinases_sig <- MAP_kinases_sig$GENE
+MAP_kinases_sig <- MAP_kinases_sig[grepl(pattern = "MAP", x = MAP_kinases_sig)]
+MAP_kinases_sig
+## other mutations are too few
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("MAP2K1", "MAP2K2", "MAPK1", "MAPK3"), p < 0.05,
+         SELF == "cis")  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## other mutations are too few
+```
+
+``` {r get-ERK-related-mutation-impact}
+mut_cnv_cans %>%
+  filter(GENE %in% c("MAPK1", "MAPK3"), SELF == "trans") %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(SUB_GENE %in% c("MAPK1", "MAPK3"), SELF == "trans") %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(GENE %in% c("MAPK1", "MAPK3"), SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+
+mut_cnv_cans %>%
+  filter(SUB_GENE %in% c("RPS6KA3", "RPS6KA1"), SELF == "trans", SUB_MOD_RSD != "PRO") %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(GENE %in% c("RPS6KA3", "RPS6KA1"), SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+```
+
+## WNT
+``` {r WNT-cis}
+wnt_genes <- c("APC", "CTNNB1", "TCF7L2", "SOX17", "FBXW7", "DKK1", "DKK2", "DKK3", "DKK4", "LRP5", "FZD10", "FAM123B", "AXIN2", "SOX9")
+ mut_cnv_cans %>%
+  filter(GENE %in% wnt_genes, 
+         SELF == "cis", 
+         SUB_MOD_RSD != "PRO", p < 0.05)  %>%
+  select(GENE) %>%
+  unique()
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("APC"), 
+         SELF == "cis", 
+         SUB_MOD_RSD != "PRO", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("APC"), 
+         SELF == "cis", 
+         SUB_MOD_RSD != "PRO", p < 0.05)  %>%
+  select(SUB_MOD_RSD, cancer) %>%
+  unique() %>%
+  select(SUB_MOD_RSD) %>%
+  table()
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("APC"), 
+         SELF == "cis", 
+         SUB_MOD_RSD == "PRO")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("TCF7L2"), 
+         SELF == "cis")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("CTNNB1"), 
+         SELF == "cis", 
+         SUB_MOD_RSD != "PRO", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("CTNNB1"), 
+         SELF == "cis", 
+         SUB_MOD_RSD != "PRO")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("CTNNB1"), 
+         SELF == "cis", 
+         SUB_MOD_RSD == "PRO", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("CTNNB1"), 
+         SELF == "cis", 
+         SUB_MOD_RSD == "PRO")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(SUB_GENE %in% c("CSNK1D"))  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+```
+
+``` {r get-WNT-related-cancer-and-pair}
+genes2focus <- c("CTNNB1", "APC", "AXIN1", "TCF7L2", "LEF1", "AXIN2", "WNT5A", "SOX9", "FZD10", "TCF7", "TGFB2")
+
+
+mut_cnv_cans %>%
+  filter(GENE %in% genes2focus & SUB_GENE %in% genes2focus & SELF == "trans" & p < 0.05, SUB_MOD_RSD == "PRO")  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% genes2focus & SUB_GENE %in% genes2focus & SELF == "trans" & p < 0.05, SUB_MOD_RSD != "PRO")  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+cancers2focus <- mut_cnv_cans %>%
+  filter(GENE %in% genes2focus & SUB_GENE %in% genes2focus & SELF == "trans" & p < 0.05)  %>%
+  select(cancer) %>%
+  unique()
+
+cancers2focus <- cancers2focus$cancer
+cancers2focus
+
+mut_cnv_cans %>%
+  filter(GENE %in% genes2focus & SUB_GENE %in% genes2focus & SELF == "trans" & p < 0.05)
+
+pairs2focus <- regression %>%
+  filter(SUB_GENE %in% genes2focus, !is.na(Source), SELF == "trans", FDR_pho_kin < 0.1, !(Source %in% c("NetKIN", "PhosphoNetworks", "MIMP"))) %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD)
+
+pairs2focus <- pairs2focus$pair
+pairs2focus
+
+regression %>%
+  filter(SUB_GENE %in% genes2focus, !is.na(Source), SELF == "trans", pair %in% pairs2focus, FDR_pho_kin < 0.1) %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD, FDR_pho_kin)
+
+regression %>%
+  filter(SUB_GENE %in% genes2focus, !is.na(Source), SELF == "trans", pair %in% pairs2focus) %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD, FDR_pho_kin)
+```
+
+``` {r}
+## check CSNK1D & CTNNB1 in CO
+mut_cnv_cans %>%
+  filter(GENE =="CTNNB1" & SUB_GENE == "CSNK1D" & SELF == "trans" & cancer == "CO")  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(SUB_GENE %in% genes2focus, SELF == "trans", FDR_pho_kin < 0.1, Cancer %in% cancers2focus) %>%
+  select(SUB_GENE, SUB_MOD_RSD) %>%
+  unique() %>%
+  arrange(SUB_GENE, SUB_MOD_RSD)
+
+## nothing I can add to the correlation result using mutation
+
+## try to fill in the known pairs
+regression %>%
+  filter(SUB_GENE %in% genes2focus, SELF == "trans", FDR_pho_kin < 0.1, Cancer %in% cancers2focus) %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD)
+
+
+
+mut_alt_genes <- mut_cnv_cans %>%
+  filter(GENE %in% genes2focus & SELF == "trans" & p < 0.05)  %>%
+  select(SUB_GENE) %>%
+  unique()
+
+cor_genes <- regression %>%
+  filter(SUB_GENE %in% genes2focus,  SELF == "trans", FDR_pho_kin < 0.1, Cancer %in% cancers2focus) %>%
+  select(GENE) %>%
+  unique()
+
+mut_alt_cor_genes <- intersect(mut_alt_genes$SUB_GENE, cor_genes$GENE)
+mut_alt_cor_genes <- c(mut_alt_cor_genes, "AKT1", "AKT2", "AKT3", "GSK3B")
+mut_alt_cor_genes
+
+mut_cnv_cans %>%
+  filter(GENE %in% genes2focus & SUB_GENE %in% mut_alt_cor_genes & SELF == "trans" & p < 0.1 & cancer == "CO")  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(SUB_GENE %in% genes2focus, GENE %in% mut_alt_cor_genes, SELF == "trans", FDR_pho_kin < 0.1, Cancer == "CO") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, Size) %>%
+  arrange(FDR_pho_kin)
+
+## PRKD1:CTNNB1:S191 positively correlated in CO, but CTNNB1 S191 is targeted by CDK5
+## CTNNB1:PRKD1:S205 mut-up in CO
+
+
+```
+
+``` {r get-APC-related-results}
+gene <- "APC"
+
+mut_cnv_cans %>%
+  filter(GENE == gene & SELF == "trans" & !is.na(Source))  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE == gene & SELF == "trans" & p < 0.05)  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_alt_genes <- mut_cnv_cans %>%
+  filter(GENE == gene & SELF == "trans" & p < 0.05)  %>%
+  select(SUB_GENE) %>%
+  unique()
+
+cor_genes <- regression %>%
+  filter(SUB_GENE == gene,  SELF == "trans", FDR_pho_kin < 0.1) %>%
+  select(GENE) %>%
+  unique()
+
+mut_alt_cor_genes <- intersect(mut_alt_genes$SUB_GENE, cor_genes$GENE)
+
+mut_cnv_cans %>%
+  filter(GENE == gene & SUB_GENE %in% mut_alt_cor_genes & SELF == "trans" & p < 0.05)  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(SUB_GENE == gene, GENE %in% mut_alt_cor_genes, SELF == "trans", FDR_pho_kin < 0.05) %>%
+  arrange(FDR_pho_kin)
+```
+
+``` {r get-CTNNB1-related-results}
+gene <- "CTNNB1"
+cancers2focus <- c("UCEC", "CO")
+
+mut_cnv_cans %>%
+  filter(GENE == gene & SELF == "trans" & !is.na(Source))  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE == gene & SELF == "trans" & p < 0.05)  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_alt_genes <- mut_cnv_cans %>%
+  filter(GENE == gene & SELF == "trans" & p < 0.05)  %>%
+  select(SUB_GENE) %>%
+  unique()
+
+cor_genes <- regression %>%
+  filter(SUB_GENE == gene,  SELF == "trans", FDR_pho_kin < 0.1, Cancer %in% cancers2focus) %>%
+  select(GENE) %>%
+  unique()
+
+mut_alt_cor_genes <- intersect(mut_alt_genes$SUB_GENE, cor_genes$GENE)
+mut_alt_cor_genes
+
+mut_cnv_cans %>%
+  filter(GENE == gene & SUB_GENE %in% mut_alt_cor_genes & SELF == "trans" & p < 0.05)  %>%
+  select(pair, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(SUB_GENE == gene, GENE %in% mut_alt_cor_genes, SELF == "trans", FDR_pho_kin < 0.1, Cancer %in% c("UCEC", "CO")) %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(GENE %in% c("CSNK1A1"),  SELF == "trans", SUB_GENE == "CTNNB1") %>%
+    select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer) %>%
+  arrange(FDR_pho_kin)
+```
+
+``` {r CTNNB1-biology-spotcheck}
+gene <- "CTNNB1"
+cancers2focus <- c("UCEC", "CO")
+
+
+
+## the kinases for S191 are CDK5 & CDK9
+mut_cnv_cans %>%
+  filter(GENE == gene & SUB_GENE %in% c("CDK5", "CDK9"))  %>%
+  select(pair, num, p, meddiff, cancer, variant_class, fdr, Source) %>%
+  arrange(p)
+## CDK5 increase in liver, but not dramatic
+
+ptm_tab %>%
+  filter(SUB_GENE == "CTNNB1" & SUB_MOD_RSD == "S675" & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks")))
+## the kinase for S675 are PAK1, PAK4, PRKACA
+
+mut_cnv_cans %>%
+  filter(GENE == gene & SUB_GENE %in% c("PAK1", "PAK4", "PRKACA"))  %>%
+  select(pair, num, p, meddiff, cancer, variant_class, fdr, Source) %>%
+  arrange(p)
+
+ptm_tab %>%
+  filter(SUB_GENE == "CTNNB1" & SUB_MOD_RSD == "T551" & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks")))
+## no kinase for T551
+
+kinase <- ptm_tab %>%
+  filter(SUB_GENE == "CTNNB1" & SUB_MOD_RSD == "S552" & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks"))) %>%
+  select(GENE)
+## AKT1, AKT2, "CAMK2A", "CAMK2B", "PRKACA" kinase for S552
+
+mut_cnv_cans %>%
+  filter(GENE == gene & SUB_GENE %in% kinase$GENE & cancer == "LIHC")  %>%
+  select(pair, num, p, meddiff, cancer, variant_class, fdr, Source) %>%
+  arrange(p)
+
+```
+
+``` {r CTNNB-most-statistical-significant}
+## cis sites
+mut_cnv_cans %>%
+  filter(GENE %in% c("CTNNB1"), 
+         SELF == "cis", 
+         SUB_MOD_RSD != "PRO", p < 0.05)  %>%
+  select(pair, num, p, meddiff, cancer, variant_class, fdr) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("CTNNB1"), 
+         SELF == "cis", 
+         SUB_MOD_RSD != "PRO", p < 0.05)  %>%
+  select(pair) %>%
+  unique
+# 1	CTNNB1:CTNNB1:S191		shared by both LIHC and UCEC	
+# 4	CTNNB1:CTNNB1:S552			
+# 5	CTNNB1:CTNNB1:S675			
+# 6	CTNNB1:CTNNB1:T551
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("CTNNB1"), fdr < 0.1)  %>%
+  select(pair, num, p, meddiff, cancer, variant_class, fdr, SUB_GENE_role) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("CTNNB1"), fdr < 0.1, SUB_GENE_role == "kinase", SUB_GENE != "APC")  %>%
+  select(pair, num, p, meddiff, cancer, variant_class, fdr) %>%
+  arrange(fdr)
+
+ptm_tab %>%
+  filter(SUB_GENE == "CTNNB1" & GENE == "CDK6" & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks")))
+## CDK6 target S45
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("CTNNB1"), SUB_GENE == "PAK1")  %>%
+  select(pair, num, p, meddiff, cancer, variant_class, fdr) %>%
+  arrange(fdr)
+
+ptm_tab %>%
+  filter(SUB_GENE == "CTNNB1" & GENE == "PRKCD" & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks")))
+## CDK6 target S45
+
+```
+
+``` {r get-CTNNB1-downstream-mutation-impact-proteome-result}
+mut_cnv_cans %>%
+  filter(GENE == "AKT1" & SELF == "cis")  %>%
+  arrange(p)
+
+AKT1_substrates <- c("BAD", "CASP9", "IKBKB", "FOXO1", "FOXO3", "MDM2", "GSK3B", "FOXO4", "CDKN1A", "TSC1", "TSC2", "CDKN1A", "CDKN1B", "XIAP", "MDM2", "MTOR", "RPTOR", "HK1", "SLC2A1", "GLUT1", "GLUT2", "GLT4")
+
+mut_cnv_cans %>%
+  filter(GENE == "AKT1" & SUB_GENE %in% AKT1_substrates)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+regression %>%
+  filter(GENE %in% c("AKT1"), SUB_GENE %in% AKT1_substrates, SELF == "trans") %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(GENE %in% c("GSK3B"), SELF == "trans", regulated == TRUE) %>%
+  arrange(FDR_pho_kin)
+
+GSK3B_substrates <- c("CTNNB1", "MYC", "CCND1", "APC", "AXIN1")
+regression %>%
+  filter(GENE == "GSK3B", SUB_GENE %in% GSK3B_substrates, SELF == "trans", regulated == TRUE) %>%
+  arrange(FDR_pho_kin)
+
+
+ mut_cnv_cans %>%
+  filter(GENE == "AKT1" & SUB_GENE %in% GSK3B_substrates) %>%
+      select(GENE, SUB_GENE, SUB_MOD_RSD, num, num_control, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+```
+
+## SWI/SNF
+``` {r SWI/SNF-cis}
+SWI_genes <- c("PBRM1", "ARID1A", "SMARCA4", "ARID1B", "ARID4A", "SMARCA5", "VHL",
+               "SMARCA2", "SMARCC1", "SMARCC2", "SMARCD2", "SMARCE1", "SMARCD1", "SMARCD3", "SMARCB1")
+mut_cnv_cans %>%
+  filter(GENE %in% SWI_genes, 
+         SELF == "cis", 
+         SUB_MOD_RSD != "PRO", p < 0.05)  %>%
+  select(GENE) %>%
+  unique()
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("PBRM1"),  SUB_MOD_RSD == "PRO",
+         SELF == "cis", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("PBRM1"), SUB_MOD_RSD != "PRO",
+         SELF == "cis", p < 0.05)  %>%
+  select(SUB_MOD_RSD, cancer) %>%
+  unique() %>%
+  table()
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("ARID1A"), 
+         SELF == "cis", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("ARID1A"), SUB_MOD_RSD == "PRO",
+         SELF == "cis", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("ARID1A"), SUB_MOD_RSD != "PRO",
+         SELF == "cis", p < 0.05)  %>%
+  select(SUB_MOD_RSD, cancer) %>%
+  unique() %>%
+  table()
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("ARID1B"), SUB_MOD_RSD == "PRO",
+         SELF == "cis", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("ARID1B"), SUB_MOD_RSD != "PRO",
+         SELF == "cis", p < 0.05)  %>%
+  select(SUB_MOD_RSD, cancer) %>%
+  unique() %>%
+  table()
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("ARID4A"), SUB_MOD_RSD != "PRO",
+         SELF == "cis", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("SMARCA4"), SELF == "cis", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("SMARCA4"), 
+         SELF == "cis")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("SMARCA5"), SUB_MOD_RSD != "PRO",
+         SELF == "cis")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+```
+
+``` {r SWI-trans-overview}
+mut_cnv_cans %>%
+  filter(GENE %in% SWI_genes,  SUB_MOD_RSD == "PRO",
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% SWI_genes,  SUB_MOD_RSD != "PRO", num >=5, num_control >= 5,
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## look into BRCA1, MLLT1, CREBBP, EP300, HDAC1, HDAC2
+
+mut_cnv_cans %>%
+  filter(GENE %in% SWI_genes,
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE) %>%
+  unique()
+## mutated genes to look at: ARID1A, ARID1B, ARID4A, PBRM1, SMARCA4, SMARCA5
+
+mut_cnv_cans %>%
+  filter(GENE %in% SWI_genes, num >=5, num_control >= 5,
+         SELF == "trans", p < 0.05)  %>%
+  select(SUB_GENE, SUB_GENE_role) %>%
+  unique() %>%
+  select(SUB_GENE_role) %>%
+  table()
+## only one affect upstream kinase --  CDK2
+
+mut_cnv_cans %>%
+  filter(GENE %in% SWI_genes,  SUB_GENE_role == "kinase",
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## only one affect upstream kinase --  CDK2, looks only slightly higher in colorectal cancers
+
+## focus on ERK1, RB1
+## hSWI/SNF complex is inactivated in vitro by ERK1 and reactivated by protein phosphatase 2A
+
+mut_cnv_cans %>%
+  filter(GENE %in% SWI_genes,  SUB_GENE %in% c("MAPK3", "RB1", "PPP2CA", "PPP2CB", "BRCA1", "MLLT1",  "CREBBP", "EP300", "HDAC1", "HDAC2", p < 0.05),
+         SELF == "trans")  %>%
+  select(SUB_GENE) %>%
+  unique()
+# 1	BRCA1			
+# 57	CREBBP			
+# 170	EP300			
+# 268	HDAC1			
+# 347	HDAC2			
+# 396	MLLT1			
+# 1016	RB1
+
+mut_cnv_cans_pho %>%
+  filter(SUB_GENE %in% SWI_genes, !(GENE %in% SWI_genes), SELF == "trans", num >= 10, num_control >= 5, p < 0.05)  %>%
+  select(GENE) %>%
+  unique()
+# 1	ARID2			
+# 2	BRD7			
+# 7	CHD3			
+# 15	CHD4			
+# 17	CREBBP			
+# 19	EP300			
+# 20	KAT2B			
+# 21	KMT2A			
+# 22	NCOR1			
+# 26	SMAD4
+
+```
+
+``` {r SWI-RB1-BRCA1}
+mut_cnv_cans %>%
+  filter(GENE %in% SWI_genes,  SUB_GENE == "RB1",
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans_pho %>%
+  filter(GENE %in% SWI_genes,  SUB_GENE == "BRCA1",
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class, num.pro, p.pro, meddiff.pro) %>%
+  arrange(p)
+## plots are not impressive
+
+mut_cnv_cans_pho %>%
+  filter(GENE %in% SWI_genes,  SUB_GENE == "MLLT1",
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class, num.pro, p.pro, meddiff.pro) %>%
+  arrange(p)
+
+mut_cnv_cans_pho %>%
+  filter(GENE %in% SWI_genes,  SUB_GENE == "HOXA7",
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class, num.pro, p.pro, meddiff.pro) %>%
+  arrange(p)
+## MLL1 effector, no change
+
+mut_cnv_cans_pho %>%
+  filter(GENE %in% SWI_genes,  SUB_GENE == "CREBBP",
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class, num.pro, p.pro, meddiff.pro) %>%
+  arrange(p)
+
+mut_cnv_cans_pho %>%
+  filter(GENE %in% SWI_genes,  SUB_GENE == "EP300",
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class, num.pro, p.pro, meddiff.pro) %>%
+  arrange(p)
+
+mut_cnv_cans_pho %>%
+  filter(GENE %in% SWI_genes,  SUB_GENE == "HDAC1",
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class, num.pro, p.pro, meddiff.pro) %>%
+  arrange(p)
+
+mut_cnv_cans_pho %>%
+  filter(GENE %in% SWI_genes,  SUB_GENE == "HDAC2",
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class, num.pro, p.pro, meddiff.pro) %>%
+  arrange(p)
+
+
+```
+
+``` {r SWI-affected}
+mut_cnv_cans_pho %>%
+  filter(SUB_GENE %in% SWI_genes, !(GENE %in% SWI_genes), SELF == "trans", num >= 10, num_control >= 5, p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class, num.pro, p.pro, meddiff.pro) %>%
+  arrange(p)
+
+```
+
+``` {r SWI-ARID1A}
+gene <- "ARID1A"
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene,
+         SELF == "trans", p < 0.05)  %>%
+  select(cancer) %>%
+  unique()
+## ARID1A mutations have trans-effects across endometrial, breast and colorectal cancers. 
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5,
+         SELF == "trans", p < 0.05)  %>%
+  select(SUB_GENE) %>%
+  unique()
+## ARID1A mutations affect 22 proteins in protein level
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff > 0,
+         SELF == "trans", p < 0.05)  %>%
+    arrange(p) %>%
+  select(SUB_GENE, cancer) %>%
+  unique() %>%
+  table()
+## 9 proteins go up:
+#          cancer
+# SUB_GENE  CO UCEC
+#   ACTG1    0    1 look not diff
+#   BAZ1B    1    0  look not diff
+#   CDK2     1    1  look soso
+#   CHAF1A   0    1  look not diff
+#   EP300    0    1  look not diff
+#   GATAD2B  1    0  look not diff
+#   HDAC1    0    1  look not diff
+#   SAP30    0    1  look not diff
+#   TOP2B    0    1  looks soso
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff < 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(SUB_GENE, cancer) %>%
+  unique() %>%
+  table()
+## 13 protein go down
+#          cancer
+# SUB_GENE  BRCA CO UCEC
+#   ACTB       0  0    1  not so diff in plot
+#   ACTL6A     0  1    1  look ok in UCEC (BAF complex component)
+#   DPF2       0  1    1  look ok in UCEC
+#   ING1       0  0    1  not so diff in plot
+#   SMARCA2    0  0    1  not so diff in plot
+#   SMARCA4    0  1    1  not so diff in UCEC, looks ok in CO
+#   SMARCB1    0  0    1  look ok in UCEC
+#   SMARCC1    0  1    0  not so diff in plot
+#   SMARCC2    0  1    1  look ok in UCEC, look nice in CO*
+#   SMARCD1    0  0    1  look soso in UCEC
+#   SMARCD2    0  1    1  not so diff in plot
+#   SMARCD3    1  0    1  not so diff in plot
+#   SMARCE1    0  1    1  look nice in CO & UCEC*
+
+mut_cnv_cans %>%
+  filter(SUB_GENE %in% gene,  SUB_MOD_RSD == "PRO", num >= 5,
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## EP300 mutations in colorectal cancers seem to have higher ARID1A protein.
+## ARID1B seemed to always accompany ARID1A, so that's why
+
+mut_cnv_cans_pho %>%
+  filter(GENE %in% gene, num >= 5,
+         SELF == "trans", p < 0.05, (!is.na(p.pro) & p.pro > 0.05) | (is.na(p.pro)))  %>%
+  select(SUB_GENE, SUB_GENE_role) %>%
+  unique() %>%
+  select(SUB_GENE_role) %>%
+  table()
+## no effect go to ARID1A kinases/phosphatases
+
+mut_cnv_cans_pho %>%
+  filter(GENE %in% gene, num >= 5,
+         SELF == "trans", p < 0.05, (!is.na(p.pro) & p.pro > 0.05) | (is.na(p.pro)))  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+```
+
+``` {r SWI-SMARCA4}
+gene <- "SMARCA4"
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene,
+         SELF == "trans", p < 0.05)  %>%
+  select(cancer) %>%
+  unique()
+## SMARCA4 mutations have trans-effects across endometrial, liver and colorectal cancers. 
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5,
+         SELF == "trans", p < 0.05)  %>%
+  select(SUB_GENE, SUB_GENE_role) %>%
+  unique()
+## SMARCA4 mutations affect 14 complex partner proteins in protein level
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD != "PRO", num >=5, num_control >= 5,
+         SELF == "trans", p < 0.05)  %>%
+  select(SUB_GENE, SUB_GENE_role) %>%
+  unique()
+## SMARCA4 mutations affect 24 complex partner proteins in phospho level
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff > 0,
+         SELF == "trans", p < 0.05)  %>%
+    arrange(p) %>%
+  select(SUB_GENE, cancer) %>%
+  unique() %>%
+  table()
+#          cancer
+# SUB_GENE  CO LIHC UCEC
+#   ACTG1    0    1    0
+#   GTF2B    1    0    0
+#   HNRNPC   1    0    0
+#   MBD2     0    0    1
+#   POLR2A   1    0    0
+#   SCYL1    0    0    1
+#   SMAD4    1    0    0 looks nice in plot
+#   SUPT16H  1    0    0
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff < 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(SUB_GENE, cancer) %>%
+  unique() %>%
+  table()
+#          cancer
+# SUB_GENE  CO UCEC
+#   ACTB     0    1
+#   ARID1B   1    0
+#   DPF2     0    1
+#   MBD3     0    1
+#   SMARCB1  0    1
+#   SMARCC2  1    0
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_GENE %in% SWI_genes, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff < 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff > 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+
+mut_cnv_cans_pho %>%
+  filter(GENE %in% gene, num >= 5,
+         SELF == "trans", p < 0.05, (!is.na(p.pro) & p.pro > 0.05) | (is.na(p.pro)))  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+
+```
+
+``` {r SWI-PBRM1}
+gene <- "PBRM1"
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene,
+         SELF == "trans", p < 0.05)  %>%
+  select(cancer) %>%
+  unique()
+## PBRM1 mutations have trans-effects across liver and renal cancers. 
+
+mut_cnv_cans %>% 
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff > 0,
+         SELF == "trans", p < 0.05)  %>%
+    arrange(p) %>%
+  select(SUB_GENE, cancer) %>%
+  unique() %>%
+  table()
+#          cancer
+# SUB_GENE  CCRCC
+#   ACTL6A      1
+#   SMARCC2     1
+#   SMARCD2     1
+#   SMARCE1     1
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff < 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(SUB_GENE, cancer) %>%
+  unique() %>%
+  table()
+#          cancer
+# SUB_GENE  CCRCC
+#   SMARCC1     1
+#   SMARCD2     1
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff < 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## PBRM1 mutations in CCRCC lower SMARCC1 protein, looks ok (P ~ 0.06), but mutations only 6 so not reliable
+
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff > 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## PBRM1 mutations in CCRCC slightly higher SMARCC2 protein 
+```
+
+``` {r SWI-ARID1B}
+gene <- "ARID1B"
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene,
+         SELF == "trans", p < 0.05)  %>%
+  select(cancer) %>%
+  unique()
+## PBRM1 mutations have trans-effects across liver and renal cancers. 
+
+mut_cnv_cans %>% 
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff > 0,
+         SELF == "trans", p < 0.05)  %>%
+    arrange(p) %>%
+  select(SUB_GENE, cancer) %>%
+  unique() %>%
+  table()
+#          cancer
+# SUB_GENE  CCRCC
+#   ACTL6A      1
+#   SMARCC2     1
+#   SMARCD2     1
+#   SMARCE1     1
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff < 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(SUB_GENE, cancer) %>%
+  unique() %>%
+  table()
+#          cancer
+# SUB_GENE  CCRCC
+#   SMARCC1     1
+#   SMARCD2     1
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff < 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## PBRM1 mutations in CCRCC lower SMARCC1 protein, looks ok (P ~ 0.06), but mutations only 6 so not reliable
+
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff > 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## PBRM1 mutations in CCRCC slightly higher SMARCC2 protein 
+```
+
+``` {r SWI-ARID4A}
+gene <- "ARID4A"
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene,
+         SELF == "trans", p < 0.05)  %>%
+  select(cancer) %>%
+  unique()
+## PBRM1 mutations have trans-effects across liver and renal cancers. 
+
+mut_cnv_cans %>% 
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff > 0,
+         SELF == "trans", p < 0.05)  %>%
+    arrange(p) %>%
+  select(SUB_GENE, cancer) %>%
+  unique() %>%
+  table()
+#          cancer
+# SUB_GENE  CCRCC
+#   ACTL6A      1
+#   SMARCC2     1
+#   SMARCD2     1
+#   SMARCE1     1
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff < 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(SUB_GENE, cancer) %>%
+  unique() %>%
+  table()
+#          cancer
+# SUB_GENE  CCRCC
+#   SMARCC1     1
+#   SMARCD2     1
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff < 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## PBRM1 mutations in CCRCC lower SMARCC1 protein, looks ok (P ~ 0.06), but mutations only 6 so not reliable
+
+
+mut_cnv_cans %>%
+  filter(GENE %in% gene, SUB_MOD_RSD == "PRO", num >=5, num_control >= 5, meddiff > 0,
+         SELF == "trans", p < 0.05)  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, Source, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## PBRM1 mutations in CCRCC slightly higher SMARCC2 protein 
+```
+
+
+``` {r VHL-trans}
+mut_cnv_cans %>%
+  filter(GENE %in% c("VHL"), 
+         SELF == "cis")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## VHL protein has poor detectin rate
+
+mut_cnv_cans %>%
+  filter(GENE %in% c("VHL"), SELF == "trans")  %>%
+  select(GENE, SUB_GENE, SUB_MOD_RSD, num, p, meddiff, cancer, variant_class) %>%
+  arrange(p)
+## no statisitical signification trans effects
+
+regression %>%
+  filter(SUB_GENE %in% "VHL", SELF == "trans") %>%
+  select(pair, Source, FDR_pho_kin, coef_pho_kin, Cancer, SUB_GENE, SUB_MOD_RSD) %>%
+  arrange(SUB_GENE, SUB_MOD_RSD)
+
+```
+

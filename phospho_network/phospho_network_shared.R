@@ -5,21 +5,21 @@
 library(stringr)
 library(reshape)
 library(grid)
-require(plyr)
 library(data.table)
 library(readr)
 library(rstudioapi)
-
+library(ggrepel)
+library(dplyr)
 
 # source ------------------------------------------------------------------
+baseD = "/Users/yigewu/Box\ Sync/"
+wd <- getwd()
+if (wd != baseD) {
+  setwd(baseD)
+}
 # folders <- strsplit(x = rstudioapi::getSourceEditorContext()$path, split = "\\/")[[1]]
-# folder_num <- which(folders == "cptac2p_analysis") -1
-# baseD <- paste0(strsplit(paste(folders[1:folder_num], collapse = "/"), split = "\\.")[[1]][1], "/")
+# baseD <- paste0(paste0(folders[1:which(folders == "Box Sync")], collapse = "/"), "/")
 # setwd(baseD)
-
-folders <- strsplit(x = rstudioapi::getSourceEditorContext()$path, split = "\\/")[[1]]
-baseD <- paste0(paste0(folders[1:which(folders == "Box Sync")], collapse = "/"), "/")
-setwd(baseD)
 source("./cptac2p_analysis/cptac2p_analysis_shared.R")
 
 # static parameters -------------------------------------------------------
@@ -141,8 +141,8 @@ sampID2pam50 = function(sampleID_vector, pam50_map, sample_map) {
   return(subtypes)
 }
 
+
 #function for normalize the variables for regression
-range01 <- function(x, ...){(x - min(x, ...)) / (max(x, ...) - min(x, ...))}
 
 markVadRetro = function(regression, sig_thres, enzyme_type) {
   ## Usage: input the regression result table and the significance level
@@ -157,9 +157,15 @@ markVadRetro = function(regression, sig_thres, enzyme_type) {
   return(table)
 }
 
+
+# evaluate regression significance ----------------------------------------
 markSigKS = function(regression, sig_thres, enzyme_type) {
   ## Usage: input the regression result table and the significance level
   ## mark table with significant cis and trans pairs
+  if (any(is.na(regression$enzyme_type))) {
+    stop("annotate the enzyme type first!")
+  }
+  
   table <- regression
   table_cis <- table[table$SELF == "cis",]
   table_cis$fdr_sig <- (table_cis$FDR_pro_kin < sig_thres)
@@ -173,6 +179,8 @@ markSigKS = function(regression, sig_thres, enzyme_type) {
     table_trans$coef_sig <- (table_trans$coef_pho_kin < 0)
   }
   table <- as.data.frame(rbind(table_cis, table_trans))
+  table$regulated <- (table$fdr_sig & table$coef_sig)
+  
   return(table)
 }
 
@@ -235,14 +243,7 @@ markSigSiteCan = function(regression, sig_thres, enzyme_type) {
   }
 }
 
-remove_outliers <- function(x, out_thres, na.rm = TRUE, ...) {
-  qnt <- quantile(x, probs=c(.25, .75), na.rm = na.rm, ...)
-  H <- out_thres * IQR(x, na.rm = na.rm)
-  y <- x
-  y[x < (qnt[1] - H)] <- NA
-  y[x > (qnt[2] + H)] <- NA
-  y
-}
+
 
 formatPhosphosite = function(phosphosite_vector, gene_vector) {
   data <- phosphosite_vector
@@ -270,4 +271,118 @@ load_ks_table <- function(protein) {
   }
   return(k_s_table)
 }
+
+load_psp <- function() {
+  k_s_table = read.delim(paste(pan3can_shared_dataD,"Phospho_databases/PhosphositePlus/data/Kinase_Substrate_Dataset_human_final_hugoified.txt",sep=""))
+  k_s_table$pair_pro <- paste0(k_s_table$GENE, ":", k_s_table$SUB_GENE)
+  k_s_table$pair <- paste0(k_s_table$pair_pro, ":", k_s_table$SUB_MOD_RSD)
+  return(k_s_table)
+}
+
+load_omnipath <- function() {
+  ## Usage: k_s_table <- load_ks_table({kinase/phosphatase})
+  k_s_table <- read_csv(paste0(ppnD, "compile_enzyme_substrate/tables/compile_omnipath_networkin_depod_signor_manual/Omnipath_NetworKin_DEPOD_SignorNotSiteMapped_manualAdded.csv"))
+  k_s_table$pair_pro <- paste0(k_s_table$GENE, ":", k_s_table$SUB_GENE)
+  k_s_table$pair <- paste0(k_s_table$pair_pro, ":", k_s_table$SUB_MOD_RSD)
+  return(k_s_table)
+}
+
+# list of kinase gene symbols ---------------------------------------------
+omnipath_tab <- load_omnipath()
+psp_tab <- load_psp()
+kinases <- unique(c(as.vector(omnipath_tab$GENE[omnipath_tab$enzyme_type == "kinase"]), as.vector(psp_tab$GENE)))
+phosphatases <- unique(omnipath_tab$GENE[omnipath_tab$enzyme_type == "phosphatase"])
+## clean up
+kinases <- kinases[!(kinases %in% c("APC" ," AXIN1", "CTNNB1", "CCNE1", "CCNA2"))]
+
+
+# list of tyrosine kinases ------------------------------------------------
+library(dplyr)
+psp_tab$aa <- substr(x = psp_tab$SUB_MOD_RSD, start = 1, stop = 1)
+psp_tab <- data.frame(psp_tab)
+
+psp_aa_long <- psp_tab %>% 
+  filter(KIN_ORGANISM == "human" & SUB_ORGANISM == "human") %>%
+  dplyr::select(GENE, aa) %>%
+  unique() %>%
+  table() %>%
+  as.data.frame()
+
+psp_aa_wide <- reshape2::dcast(psp_aa_long, GENE ~ aa)
+psp_aa_wide <- data.frame(psp_aa_wide)
+psp_aa_wide %>%
+  filter(Y == 1) %>%
+  nrow()
+
+TK_list <- psp_aa_wide %>%
+  filter(Y >= 1)
+
+TK_list <- as.vector(TK_list$GENE)
+
+
+# Annotate regression table -----------------------------------------------
+annotate_enzyme_type  <- function(regression, kinases, phosphatases) {
+  table2annotate <- regression
+  table2annotate$GENE <- table2annotate$KINASE
+  
+  table2annotate$enzyme_type <- NULL
+  
+  table2annotate$enzyme_type <- ""
+  table2annotate$enzyme_type[table2annotate$GENE %in% kinases] <- "kinase"
+  table2annotate$enzyme_type[table2annotate$GENE %in% phosphatases] <- "phosphatase"
+  return(table2annotate)
+}
+
+annotate_ks_source <- function(regression) {
+  table2annotate <- regression
+  
+  omnipath_tab <- load_omnipath()
+  psp_tab <- load_psp()
+  
+  source_tab <- data.frame(pair = psp_tab$pair[!(psp_tab$pair %in% omnipath_tab$pair)], Source = "PhosphoSite")
+  source_tab <- rbind(source_tab, omnipath_tab[, c("pair", "Source")])
+  
+  table2annotate <- merge(table2annotate, source_tab, all.x = T)
+  table2annotate$is.direct <- ifelse(!is.na(table2annotate$Source) & !(table2annotate$Source %in% c("NetKIN", "PhosphoNetworks", "MIMP")), T, F)
+  return(table2annotate)
+}
+
+
+# filter regression and adjust results ------------------------------------
+change_regression_nonNA <- function(regression, reg_nonNA, reg_sig) {
+  table2filter <- regression
+  if (any(is.na(table2filter$enzyme_type))) {
+    print("annotate enzyme type first!")
+    table2filter <- annotate_enzyme_type(regression = table2filter, kinases = kinases, phosphatases = phosphatases)
+  }
+  
+  table2filter <- table2filter[table2filter$Size >= reg_nonNA,]
+  
+  ## adjust p-values to FDR
+  name = c("pro_kin","pro_sub","pho_kin")
+  for (cancer_tmp in unique(table2filter$Cancer)) {
+    for (enzyme_type_tmp in unique(table2filter$enzyme_type)) {
+      for(self_tmp in c(TRUE,FALSE)) {
+        for(coln_tmp in name) {#adjust pvalues for each variable
+          row <- (table2filter$self==self_tmp) & (table2filter$Cancer==cancer_tmp) & (table2filter$enzyme_type==enzyme_type_tmp)
+          table2filter[row, paste("FDR_",coln_tmp,sep = "")] <-p.adjust(table2filter[row,paste("P_",coln_tmp,sep = "")],method = "fdr")
+        }
+      }
+    }
+  }
+  
+  ## clean up
+  table2filter <- table2filter[!(table2filter$GENE %in% c("APC", "AXIN1", "CCNE1", "CCNA2")),]
+  
+  table2mark <- NULL
+  ## mark significance
+  for (enzyme_type_tmp in unique(table2filter$enzyme_type)) {
+    tab_tmp <- table2filter[table2filter$enzyme_type == enzyme_type_tmp,]
+    tab_tmp <- markSigKS(regression = tab_tmp, sig_thres = reg_sig[enzyme_type_tmp], enzyme_type = enzyme_type_tmp)
+    table2mark <- rbind(table2mark, tab_tmp)
+  }
+  
+  return(table2mark)
+}
+
 

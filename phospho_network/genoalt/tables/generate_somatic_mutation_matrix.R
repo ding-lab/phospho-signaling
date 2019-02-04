@@ -3,7 +3,7 @@
 
 
 # source ------------------------------------------------------------------
-source("Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R")
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
 
 
 # Set variables -----------------------------------------------------------
@@ -21,12 +21,19 @@ substrates <- unique(ptms_site_pairs_sup$SUB_GENE)
 ## input complex table
 complex_pair_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/compile_enzyme_substrate/tables/parse_corum_signor_reactome/sup_complex_pair_uniq.txt", data.table = F)
 
+## input pan cancer driver gene list
+driver_table <- read_excel("./Ding_Lab/Projects_Current/TCGA_data/gene_lists/mmc1.xlsx", 
+                           sheet = "Table S1", skip = 3)
+
 # get the gene list covering all the enzymes and substrates ---------------
 genes4mat <- unique(c(kinases, phosphatases, substrates, as.vector(complex_pair_tab$geneA), as.vector(complex_pair_tab$geneB)))
 length(genes4mat)
 
+genes4mat <- unique(c(kinases, phosphatases, substrates, as.vector(complex_pair_tab$geneA), as.vector(complex_pair_tab$geneB), as.vector(driver_table$Gene)))
+length(genes4mat)
+
 # loop by cancer ----------------------------------------------------------
-for (cancer in c(cancers_sort, "UCEC")) {
+for (cancer in c(cancers_sort, "UCEC", "CCRCC")) {
   maf <- loadMaf(cancer = cancer, maf_files = maf_files)
   nrow(maf)
   maf <- maf[maf$Hugo_Symbol %in% genes4mat,]
@@ -53,7 +60,7 @@ for (cancer in c(cancers_sort, "UCEC")) {
   phosphatases_mut_count <- mut_count_thres[names(mut_count_thres) %in% phosphatases]
   print(phosphatases_mut_count)
   
-  fn <- paste0(makeOutDir(resultD = resultD), cancer, "_somatic_mutation_in_enzyme_substrate.txt")
+  fn <- paste0(makeOutDir(resultD = resultD), cancer, "_somatic_mutation.txt")
   write.table(x = mut_mat, file = fn, row.names = F, quote = F, sep = '\t')
 }
 

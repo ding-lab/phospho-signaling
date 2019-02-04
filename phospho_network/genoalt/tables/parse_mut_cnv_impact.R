@@ -6,17 +6,16 @@ source("Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R")
 source("./cptac2p_analysis/phospho_network/phospho_network_plotting.R")
 library(dplyr)
 
-# inputs ------------------------------------------------------------------
-# mut_cis_pro <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_cna_impact_cis_pro_cptac2p/mut_cnv_sig_cans.txt"), data.table = F)
-# mut_pho <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_cna_impact_cptac2p/mut_cnv_sig_cans.txt"), data.table = F)
-# cna_pho <- fread(input = paste0("./cptac2p/analysis_results/phospho_network/genoalt/tables/test_mut_cna_impact/mut_cnv_cans.txt"))
-## input enzyme-substrate table
+# input enzyme-substrate table ------------------------------------------------------------------
 ptms_site_pairs_sup <- read_csv(paste0(ppnD, "compile_enzyme_substrate/tables/compile_omnipath_networkin_depod_signor_manual/Omnipath_NetworKin_DEPOD_SignorNotSiteMapped_manualAdded.csv"))
 ptms_site_pairs_sup <- ptms_site_pairs_sup[ptms_site_pairs_sup$Source == "NetKIN" | (ptms_site_pairs_sup$Source != "NetKIN" & ptms_site_pairs_sup$networkin_score >= 5),]
 ptms_site_pairs_sup <- data.frame(ptms_site_pairs_sup)
 enzyme_sub <- unique(ptms_site_pairs_sup[, c("GENE", "SUB_GENE")])
 
 # input and parse mutaional impact phosphorylation within enzyme-substrate pair ---------------------------
+# mut_cis_pro <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_cna_impact_cis_pro_cptac2p/mut_cnv_sig_cans.txt"), data.table = F)
+# mut_pho <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_cna_impact_cptac2p/mut_cnv_sig_cans.txt"), data.table = F)
+# cna_pho <- fread(input = paste0("./cptac2p/analysis_results/phospho_network/genoalt/tables/test_mut_cna_impact/mut_cnv_cans.txt"))
 mut_cnv_cans_UCEC <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_cna_impact_UCEC/mut_cnv_sig_cans.txt"), data.table = F)
 mut_cnv_cans_cptac2p <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_cna_impact_cptac2p/mut_cnv_sig_cans.txt"), data.table = F)
 col2merge <- intersect(colnames(mut_cnv_cans_UCEC), colnames(mut_cnv_cans_cptac2p))

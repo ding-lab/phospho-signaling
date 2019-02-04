@@ -4,9 +4,13 @@
 
 
 # load packages -----------------------------------------------------------
-source('~/Box Sync/cptac2p_analysis/cptac2p_analysis_shared.R')
+baseD = "/Users/yigewu/Box\ Sync/"
+wd <- getwd()
+if (wd != baseD) {
+  setwd(baseD)
+}
+source('./cptac2p_analysis/cptac2p_analysis_shared.R')
 
-library(limma)
 library(readxl)
 library(readr)
 # library(dplyr)
@@ -310,6 +314,37 @@ normalize_by_sample = function(m){
   }
   return(m)
 }
+
+scale_by_sample = function(m){
+  m = as.matrix(m)
+  m[!is.finite(m)] = NA
+  for (i in 1:ncol(m)){
+    mean_tmp <-  mean(m[,i], na.rm=T)
+    sd_tmp <- sd(m[,i], na.rm=T)
+    if ( !is.nan(mean_tmp) & !is.na(sd_tmp) ) {
+      m[,i] = (m[,i] - mean_tmp)/sd_tmp
+    } else {
+      m[,i] = NA
+    }
+  }
+  return(m)
+}
+
+scale_by_row = function(m){
+  m = as.matrix(m)
+  m[!is.finite(m)] = NA
+  for (i in 1:nrow(m)){
+    mean_tmp <-  mean(m[i,], na.rm=T)
+    sd_tmp <- sd(m[i,], na.rm=T)
+    if ( !is.nan(mean_tmp) & !is.na(sd_tmp) ) {
+      m[i,] = (m[i,] - mean_tmp)/sd_tmp
+    } else {
+      m[i,] = NA
+    }
+  }
+  return(m)
+}
+
 
 # add to clinical data whether a certain data type exist for each sample
 # expreType = "protein"/"phosphoprotein"

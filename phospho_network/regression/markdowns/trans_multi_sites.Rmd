@@ -1,0 +1,188 @@
+---
+title: "trans_multi_sites"
+output: html_document
+---
+## source
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source('~/Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R')
+ppnD <- "~/Box Sync/cptac2p/analysis_results/phospho_network/"
+library(dplyr)
+
+```
+
+## inputs
+``` {r input-phosphositeplus-table}
+psp_tab <- fread(input = "~/Box Sync/Ding_Lab/Projects_Current/PhosphoDrug/PhosphoDrug_shared_data/Resources/Phospho_databases/PhosphoSitePlus/01042019/Kinase_Substrate_Dataset", data.table = F)
+psp_tab %>%  head()
+
+psp_tab$pair_pro <- paste0(psp_tab$GENE, ":", psp_tab$SUB_GENE)
+psp_tab$pair_site <- paste0(psp_tab$pair_pro, "_", psp_tab$SUB_MOD_RSD)
+
+psp_dis_tab <- read_delim("Box Sync/Ding_Lab/Projects_Current/PhosphoDrug/PhosphoDrug_shared_data/Resources/Phospho_databases/PhosphoSitePlus/01042019/Disease-associated_sites", "\t", escape_double = FALSE, trim_ws = TRUE, skip = 2)
+psp_dis_tab %>% head()
+psp_tab$aa <- substr(x = psp_tab$SUB_MOD_RSD, start = 1, stop = 1)
+```
+
+``` {r load-regression-result}
+## load regression table
+reg_nonNA <- 20
+enzyme_type <- "kinase"
+regression <- fread(input = paste0(ppnD, "regression/tables/", "change_regression_nonNA/", 
+                                   enzyme_type, "_substrate_regression_cptac2p_3can_tumor",
+                                   "_reg_nonNA", reg_nonNA, ".txt"), data.table = F)
+regression <- markSigSiteCan(regression = regression, sig_thres = 0.05, enzyme_type = enzyme_type)
+regression$rsd <- paste0(regression$SUB_GENE, "_", regression$SUB_MOD_RSD)
+regression$rsd[regression$SELF == "cis" & regression$fdr_sig & regression$coef_sig] %>% head
+regression$regulated <- (regression$fdr_sig & regression$coef_sig)
+regression$pair_pro <- paste0(regression$GENE, ":", regression$SUB_GENE)
+regression$pair_site <- paste0(regression$pair_pro, "_", regression$SUB_MOD_RSD)
+regression$aa <- substr(regression$SUB_MOD_RSD, start = 1, stop = 1)
+
+cis_detected_sites <- unique(regression$rsd[regression$SELF == "cis"])
+cis_detected_sites %>% length()
+
+cis_regulated_sites <- unique(regression$rsd[regression$SELF == "cis" & regression$fdr_sig & regression$coef_sig])
+cis_regulated_sites %>% length()
+
+trans_detected_sites <- unique(regression$rsd[regression$SELF == "trans"])
+trans_detected_sites %>% length()
+
+trans_regulated_sites <- unique(regression$rsd[regression$SELF == "trans" & regression$fdr_sig & regression$coef_sig])
+trans_regulated_sites %>% length()
+
+regulated_pair_pro <- unique(regression$pair_pro[regression$regulated])
+detected_pair_pro <- unique(regression$pair_pro)
+
+regulated_pair_site <- unique(regression$pair_site[regression$regulated])
+detected_pair_site <- unique(regression$pair_site)
+
+```
+
+
+## business
+``` {r get-prevalence-multi-site-regulation}
+## How prevalent are the regulated kinase-substrate pairs to regulate multiple sites (in the same cancer) ?
+for (cancer in c("BRCA", "OV", "CO")) {
+  regression %>%
+    filter(Cancer == cancer, SELF == "trans", regulated == TRUE) %>%
+    select(GENE, SUB_GENE) %>%
+    table() %>%
+    data.frame() %>%
+    filter(Freq > 0) %>%
+    nrow() %>%
+    print()
+  
+  regression %>%
+    filter(Cancer == cancer, SELF == "trans", regulated == TRUE) %>%
+    select(GENE, SUB_GENE) %>%
+    table() %>%
+    data.frame() %>%
+    filter(Freq > 1) %>%
+    nrow() %>%
+    print()
+  
+  print((regression %>%
+    filter(Cancer == cancer, SELF == "trans", regulated == TRUE) %>%
+    select(GENE, SUB_GENE) %>%
+    table() %>%
+    data.frame() %>%
+    filter(Freq > 1) %>%
+    nrow())/(regression %>%
+    filter(Cancer == cancer, SELF == "trans", regulated == TRUE) %>%
+    select(GENE, SUB_GENE) %>%
+    table() %>%
+    data.frame() %>%
+    filter(Freq > 0) %>%
+    nrow()))
+}
+```
+
+``` {r get-prevalence-multi-site-same-residue-regulated}
+## how prevalent are the case for multiple sites with the same residues?
+for (cancer in c("BRCA", "OV", "CO")) {
+  regression %>%
+    filter(Cancer == cancer, SELF == "trans", regulated == TRUE) %>%
+    select(GENE, SUB_GENE) %>%
+    table() %>%
+    data.frame() %>%
+    filter(Freq > 0) %>%
+    nrow() %>%
+    print()
+  
+  regression %>%
+    filter(Cancer == cancer, SELF == "trans", regulated == TRUE) %>%
+    select(GENE, SUB_GENE, aa) %>%
+    table() %>%
+    data.frame() %>%
+    filter(Freq > 1) %>%
+    select(GENE, SUB_GENE) %>%
+    unique() %>%
+    nrow()
+
+  print((regression %>%
+    filter(Cancer == cancer, SELF == "trans", regulated == TRUE) %>%
+    select(GENE, SUB_GENE, aa) %>%
+    table() %>%
+    data.frame() %>%
+    filter(Freq > 1) %>%
+    select(GENE, SUB_GENE) %>%
+    unique() %>%
+    nrow())/(regression %>%
+    filter(Cancer == cancer, SELF == "trans", regulated == TRUE) %>%
+    select(GENE, SUB_GENE) %>%
+    table() %>%
+    data.frame() %>%
+    filter(Freq > 1) %>%
+    nrow()))
+}
+
+```
+
+## test motif scores
+``` {r input-motif-scores}
+ptms_site_pairs_sup <- read_csv(paste0("~/Box Sync/cptac2p/analysis_results/phospho_network/compile_enzyme_substrate/tables/compile_omnipath_networkin_depod_signor_manual/Omnipath_NetworKin_DEPOD_SignorNotSiteMapped_manualAdded.csv"))
+
+ptms_site_pairs_sup <- data.frame(ptms_site_pairs_sup)
+ptms_site_pairs_sup$pair <- paste0(ptms_site_pairs_sup$pair_pro, ":", ptms_site_pairs_sup$SUB_MOD_RSD)
+ptms_site_pairs_sup$SELF <- ifelse(as.vector(ptms_site_pairs_sup$GENE) == as.vector(ptms_site_pairs_sup$SUB_GENE), "cis", "trans")
+ptms_site_pairs_sup$rsd <- paste0(ptms_site_pairs_sup$SUB_GENE, "_", ptms_site_pairs_sup$SUB_MOD_RSD)
+
+ptms_site_pairs_sup %>%
+  head()
+```
+
+``` {r get-correlation-between-motif-prediction-score-and-correlation-coefficients}
+## merge ptm table with regression table
+for (cancer in c("BRCA", "OV", "CO")) {
+  reg_tab2test <- regression %>%
+    filter(Cancer == cancer, SELF == "trans", regulated == TRUE)
+  
+  reg_tab2test <- merge(reg_tab2test, ptms_site_pairs_sup[, c("pair", "networkin_score")], by = c("pair"))
+  reg_tab2test <- reg_tab2test %>%
+    filter(!is.infinite(networkin_score) & !is.na(networkin_score))
+  
+  p <- ggplot()
+  p <- p + geom_point(data = reg_tab2test, mapping = aes(x = networkin_score, y = coef_pho_kin, color = aa))
+  p
+  
+  reg_tab2test %>%
+    select(GENE) %>%
+    table() %>%
+    data.frame() %>%
+    filter(Freq > 1)
+  
+  p <- ggplot()
+  p <- p + geom_point(data = reg_tab2plot, mapping = aes(x = networkin_score, y = coef_pho_kin, color = aa))
+  p
+  
+  reg_tab2plot <- reg_tab2test %>%
+    filter(GENE == "MAPK3")
+
+  p <- ggplot()
+  p <- p + geom_point(data = reg_tab2plot, mapping = aes(x = networkin_score, y = coef_pho_kin, color = aa))
+  p
+  
+}
+```
+
