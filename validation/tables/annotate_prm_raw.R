@@ -21,6 +21,7 @@ prm_raw.f <- merge(prm_raw.f, prm_loq[,c("peptide", "phospho", "rlm_slope", "rlm
 
 ## input kinase family info
 kinase_family_per_synonym <- fread(input = "./cptac2p/cptac_shared/analysis_results/validation/tables/cor_prm_ms_match_specimen/kinase_family_per_synonym,txt", data.table = F)
+kinase_family_per_synonym <- fread(input = "./cptac2p/analysis_results/validation/tables/cor_prm_ms_match_specimen/kinase_family_per_synonym,txt", data.table = F)
 
 ## input metabolome annotation info
 metabolism_group <- read_excel(path = "./cptac2p/cptac_shared/analysis_results/validation/tables/annotate_prm_raw/proteins_in_prm_notkinase_DAVID_functional_annotation.xlsx")

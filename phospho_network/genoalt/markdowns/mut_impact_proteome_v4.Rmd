@@ -1,0 +1,4964 @@
+---
+title: "Untitled"
+output: html_document
+---
+## source
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+setwd(baseD)
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+library(knitr)
+opts_knit$set(root.dir = baseD)
+
+```
+
+## inputs
+``` {r vairiables}
+num_genoalt_thres <- 5
+cancers2proces <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
+```
+
+```{r input-mut_impact_tab}
+mut_impact_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/genoalt/tables/test_SMG_mut_impact_proteome/SMG_mut_impact_tab.txt", data.table = F)
+mut_impact_tab <- mut_impact_tab %>%
+  mutate(pair_cat_signaling_sum = (SUB_GENE.is_TF_downstream + SUB_GENE.is_kinase_substrate + SUB_GENE.is_phosphatase_substrate + SUB_GENE.is_complex_partner))
+mut_impact_tab$GENE.is_SMG <- get_SMG_by_cancer(gene_vector = mut_impact_tab$GENE, cancer_vector = mut_impact_tab$cancer)
+```
+
+```{r input-mut-impact-second-degree-tab}
+mut_impact_second_degree_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/genoalt/tables/test_SMG_mut_impact_proteome_second_degree/SMG_mut_impact_tab.txt", data.table = F)
+mut_impact_second_degree_tab$GENE.is_SMG <- get_SMG_by_cancer(gene_vector = mut_impact_second_degree_tab$GENE, cancer_vector = mut_impact_second_degree_tab$cancer)
+
+mut_impact_second_degree_tab <- mut_impact_second_degree_tab %>%
+  mutate(node_previous = str_split_fixed(pair_pro_previous, pattern = ":", n = 2)[,2]) %>%
+  mutate(node_previous_SUB_GENE = paste0(node_previous, ":", SUB_GENE)) %>%
+  mutate(node_previous_SUB_MOD_RSD = paste0(node_previous, ":", SUB_GENE, ":", SUB_MOD_RSD)) %>%
+  mutate(pair_pro = paste0(GENE, ":", SUB_GENE))
+```
+
+```{r input-mut_impact-regression-substrates-tab}
+mut_impact_regulated_sites <- fread(input = "./cptac2p/analysis_results/phospho_network/genoalt/tables/test_SMG_mut_impact_proteome_regulated_phosphosites/SMG_mut_impact_tab.txt", data.table = F)
+mut_impact_regulated_sites$GENE.is_SMG <- get_SMG_by_cancer(gene_vector = mut_impact_regulated_sites$GENE, cancer_vector = mut_impact_regulated_sites$cancer)
+```
+
+
+```{r input-pair-table}
+pair_tab_annotated <- fread(input = "./cptac2p/analysis_results/dependencies/tables/compile_protein_pair_table/protein_pair_table.txt", data.table = F)
+colnames(pair_tab_annotated)
+pair_cat <- colnames(pair_tab_annotated)[!(colnames(pair_tab_annotated) %in% c("GENE", "SUB_GENE", "pair_pro"))]
+pair_cat
+pair_cat_signaling <- c("SUB_GENE.is_TF_downstream", "SUB_GENE.is_kinase_substrate", "SUB_GENE.is_phosphatase_substrate", "SUB_GENE.is_complex_partner")
+tf_tab <- fread(input = "./Ding_Lab/Projects_Current/TP53_shared_data/resources/PPI/TF_interactions.txt", data.table = F)
+
+```
+
+```{r input-regression}
+regression <- fread(input = paste0(ppnD, "regression/tables/annotate_regression_with_mut_impact/", 
+                                   "regression_cptac2p_cptac3_tumor_reg_nonNA20_mut_impact_cancer_specificity_annotated.txt"),
+                    data.table = F)
+reg_sig <- c(0.05, 0.05); names(reg_sig) <- c("kinase", "phosphatase")
+regression <- change_regression_nonNA(regression = regression, reg_nonNA = 20, reg_sig = reg_sig)
+regression <- annotate_ks_source(regression = regression)
+```
+
+```{r check-if-all-kinases/phosphatase-in-regression-is-tested}
+pair_tab_annotated_smg <- pair_tab_annotated[pair_tab_annotated$GENE %in% unlist(SMGs),]
+all_kinases <- unique(regression$GENE)
+all_kinases %>% length()
+all_kinases[!(all_kinases %in% mut_impact_tab$SUB_GENE)]
+all_kinases[!(all_kinases %in% mut_impact_second_degree_tab$SUB_GENE)]
+all_kinases[!(all_kinases %in% pair_tab_annotated$SUB_GENE[pair_tab_annotated$GENE %in% mut_impact_second_degree_tab$SUB_GENE])]
+
+regression %>%
+  filter(SUB_GENE == "RB1" & regression$regulated) %>%
+  filter(cancer == "BRCA")
+
+regression %>%
+  filter(SUB_GENE == "RB1" & GENE == "CDK4") %>%
+  filter(cancer == "BRCA")
+```
+
+```{r see-most-signifcant}
+fdr_sig_genes <- mut_impact_tab %>%
+  filter(fdr < 0.05) %>%
+  select(GENE) %>%
+  unique() %>%
+  as.vector()
+fdr_sig_genes
+unlist(SMGs)[!(unlist(SMGs) %in% fdr_sig_genes$GENE)]
+unique(unlist(SMGs)[(unlist(SMGs) %in% fdr_sig_genes$GENE)])
+
+fdr_sig_genes <- mut_impact_tab %>%
+  filter(fdr < 0.1) %>%
+  select(GENE) %>%
+  unique() %>%
+  as.vector()
+fdr_sig_genes
+unlist(SMGs)[!(unlist(SMGs) %in% fdr_sig_genes$GENE)]
+
+mut_impact_tab %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  arrange(cancer)
+
+```
+
+## SMG-kinase
+```{r SMG-kinase-overview}
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(SELF == "trans") %>%
+  filter(SUB_GENE.is_kinase_substrate == T | SUB_GENE.is_phosphatase_substrate == T) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+```
+
+
+## SMG-other
+```{r SMG-other-overview}
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(!(GENE %in% c(kinases, phosphatases))) %>%
+  filter(!(GENE %in% pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE.is_TF_downstream])) %>%
+  filter((SUB_GENE %in% c(kinases, phosphatases))) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(num >= 5) %>%
+  filter(affected_exp_type == "PHO" | affected_exp_type == "PRO") %>%
+  filter(SELF == "trans") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(!(GENE %in% c(kinases, phosphatases))) %>%
+  filter(!(GENE %in% pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE.is_TF_downstream])) %>%
+  filter((SUB_GENE %in% c(kinases, phosphatases))) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(num >= 5) %>%
+  filter(affected_exp_type == "PHO" | affected_exp_type == "PRO") %>%
+  filter(SUB_GENE.is_complex_partner == T) %>%
+  filter(SELF == "trans") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(!(GENE %in% c(kinases, phosphatases))) %>%
+  filter(!(GENE %in% pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE.is_TF_downstream])) %>%
+  filter((SUB_GENE %in% c(kinases, phosphatases))) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(num >= 5) %>%
+  filter(affected_exp_type == "PHO" | affected_exp_type == "PRO") %>%
+  filter(SUB_GENE.is_complex_partner == F) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer != "LIHC") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+```
+
+## BRCA
+### BRCA-SMG-kinase
+```{r BRCA-kinase-overview}
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+```
+AKT1, MAP2K4, MAP3K1 and PIK3CA
+
+#### BRCA-SMG-kinase-PIK3CA
+```{r BRCA-PIK3CA-cis}
+gene_altered <- "PIK3CA"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r BRCA-PIK3CA-first-degree}
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "PIK3CA") %>%
+  filter(SUB_GENE != "PIK3CA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+```
+```{r BRCA-PIK3CA-second-degree}
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "PIK3CA") %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  arrange(fdr_by_gene) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "PIK3CA") %>%
+  filter(SUB_GENE == "AKT2") %>%
+  filter(affected_exp_type == "RNA") %>%
+  arrange(fdr_by_gene) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "PIK3CA") %>%
+  filter(SUB_GENE == "AKT2") %>%
+  filter(affected_exp_type == "PRO") %>%
+  arrange(fdr_by_gene) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+
+```
+
+
+#### BRCA-SMG-kinase-AKT1
+```{r BRCA-AKT1-cis}
+gene_altered <- "AKT1"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-kinase-TP53-PLK1-downstream-LMNA-regression}
+cancer_tmp <- "BRCA"
+gene_affected <- "LMNA"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(regulated == T) %>%
+  filter(SUB_GENE == "LMNA") %>%
+  filter(SUB_MOD_RSD == "S301") %>%
+  select(pair, FDR_pho_kin, coef_pho_kin, is.direct) %>%
+  arrange(FDR_pho_kin)
+```
+
+#### BRCA-SMG-kinase-MAP3K1
+```{r BRCA-MAP3K1-cis}
+gene_altered <- "MAP3K1"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r BRCA-MAP3K1-trans-first-degree}
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "MAP3K1") %>%
+  filter(SUB_GENE != "MAP3K1") %>%
+  filter(fdr_by_gene < 0.1) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "MAP3K1") %>%
+  filter(SUB_GENE != "MAP3K1") %>%
+  filter(p < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+```
+
+```{r BRCA-MAP3K1-trans-frist-degree-STAT3}
+gene_altered <- "MAP3K1"
+cancer_tmp <- "BRCA"
+gene_affected <- "STAT3"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+## STAT3 phospho go up so not expected
+```
+
+
+
+```{r BRCA-MAP3K1-second-degree}
+mut_impact_second_degree_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "MAP3K1") %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  arrange(fdr_by_gene) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+```
+#### BRCA-SMG-kinase-MAP2K4
+
+```{r BRCA-MAP2K4-cis}
+gene_altered <- "MAP2K4"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r BRCA-MAP2K4-overview}
+gene_altered <- "MAP2K4"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "MAP2K4") %>%
+  filter(SUB_GENE != "MAP2K4") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "MAP2K4") %>%
+  filter(SUB_GENE != "MAP2K4") %>%
+  filter(fdr_by_gene < 0.1) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "MAP2K4") %>%
+  filter(SUB_GENE != "MAP2K4") %>%
+  filter(p < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+```
+
+```{r BRCA-MAP2K4-second-degree}
+mut_impact_second_degree_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "MAP2K4") %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  arrange(fdr_by_gene) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+```
+
+
+
+
+
+### BRCA-SMG-TF
+```{r BRCA-kinase-overview}
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(SUB_GENE.is_TF_downstream == T) %>%
+  select(GENE) %>%
+  unique()
+```
+
+#### BRCA-SMG-TF-GATA3
+```{r BRCA-GATA3-cis}
+gene_altered <- "GATA3"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r BRCA-GATA3-trans}
+gene_altered <- "GATA3"
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-GATA3-trans-frist-degree-EGFR}
+gene_altered <- "GATA3"
+cancer_tmp <- "BRCA"
+gene_affected <- "EGFR"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-GATA3-trans-frist-degree-EGFR}
+gene_altered <- "GATA3"
+cancer_tmp <- "BRCA"
+gene_affected <- "EGFR"
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"])
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"])
+
+```
+
+
+#### BRCA-SMG-TF-TP53
+```{r BRCA-TP53-cis}
+gene_altered <- "TP53"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r BRCA-TP53-trans}
+gene_altered <- "TP53"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE.is_TF_downstream == T) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE %in% tf_tab$target_genesymbol[tf_tab$source_genesymbol == gene_altered & tf_tab$is_stimulation == 1]) %>%
+  filter(meddiff < 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE %in% tf_tab$target_genesymbol[tf_tab$source_genesymbol == gene_altered & tf_tab$is_inhibition == 1]) %>%
+  filter(meddiff > 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  filter(fdr_by_gene < 0.1) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE %in% tf_tab$target_genesymbol[tf_tab$source_genesymbol == gene_altered & tf_tab$is_inhibition == 1]) %>%
+  filter(meddiff < 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE %in% tf_tab$target_genesymbol[tf_tab$source_genesymbol == gene_altered & tf_tab$is_stimulation == 1]) %>%
+  filter(meddiff > 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-TP53-PLK1}
+gene_altered <- "TP53"
+gene_affected <- "PLK1"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r BRCA-TP53-PLK1-downstream}
+gene_altered <- "TP53"
+gene_affected <- "PLK1"
+cancer_tmp <- "BRCA"
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans" & regression$is.direct == T]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+PLK1_regulated_TP53BP1_sites <- mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(meddiff > 0) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_GENE == "TP53BP1") %>%
+  select(SUB_MOD_RSD) %>%
+  unique()
+
+PLK1_regulated_TP53BP1_sites %>%
+  nrow()
+
+CDK1_regulated_TP53BP1_sites <- mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+    filter(meddiff > 0) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == "CDK1" & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == "CDK1" & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_GENE == "TP53BP1") %>%
+  select(SUB_MOD_RSD) %>%
+  unique()
+
+CDK1_regulated_TP53BP1_sites %>%
+  nrow()
+
+c(PLK1_regulated_TP53BP1_sites$SUB_MOD_RSD, CDK1_regulated_TP53BP1_sites$SUB_MOD_RSD) %>%
+  unique()
+
+c(PLK1_regulated_TP53BP1_sites$SUB_MOD_RSD, CDK1_regulated_TP53BP1_sites$SUB_MOD_RSD) %>%
+  unique() %>%
+  length()
+```
+
+```{r BRCA-kinase-TP53-PLK1-downstream-TP53BP1}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "TP53BP1"
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == "PLK1" & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == "PLK1" & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(pair) %>%
+  unique
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == "PLK1" & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(p > 0.05) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == "PLK1" & regression$P_pho_kin > 0.1 & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(-num)
+```
+
+```{r BRCA-kinase-TP53-PLK1-downstream-TP53BP1-regression}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "TP53BP1"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(regulated == T) %>%
+  filter(SUB_GENE == "TP53BP1") %>%
+  filter(SUB_MOD_RSD %in% c(PLK1_regulated_TP53BP1_sites$SUB_MOD_RSD, CDK1_regulated_TP53BP1_sites$SUB_MOD_RSD)) %>%
+  select(pair, FDR_pho_kin, coef_pho_kin, is.direct) %>%
+  arrange(FDR_pho_kin)
+```
+
+```{r BRCA-TP53-VRK1}
+gene_altered <- "TP53"
+gene_affected <- "VRK1"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-TP53-ATM}
+gene_altered <- "TP53"
+gene_affected <- "ATM"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+
+```{r BRCA-kinase-TP53-trans-CDK1}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "CDK1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% "ATR") %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(p > 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(-num)
+```
+
+```{r BRCA-kinase-TP53-trans-CDK1-TFs}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- tf_tab$source_genesymbol[tf_tab$target_genesymbol == "CDK1"]
+gene_affected <- gene_affected[!(gene_affected == gene_altered)]
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-kinase-TP53-trans-PLK1-TFs}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- tf_tab$source_genesymbol[tf_tab$target_genesymbol == "PLK1"]
+gene_affected <- gene_affected[!(gene_affected == gene_altered)]
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-kinase-TP53-trans-EGFR}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "EGFR"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-kinase-TP53-trans-IGF1R}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "IGF1R"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-kinase-TP53-trans-AKT1}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "AKT1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+
+```{r BRCA-TP53-CDK1-downstream}
+gene_altered <- "TP53"
+gene_affected <- "CDK1"
+cancer_tmp <- "BRCA"
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans" & regression$is.direct == T]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(meddiff > 0) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(pair_pro) %>%
+  unique()
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(meddiff > 0) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-kinase-TP53-CDK1-downstream-TP53BP1}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "TP53BP1"
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == "CDK1" & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-kinase-TP53-CDK1-downstream-ATR}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "ATR"
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == "CDK1" & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-kinase-TP53-CDK1-downstream-ATR-regression}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "ATR"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(regulated == T) %>%
+  filter(SUB_GENE == "ATR") %>%
+  select(pair, FDR_pho_kin, coef_pho_kin, is.direct) %>%
+  arrange(FDR_pho_kin)
+```
+
+
+```{r BRCA-kinase-TP53-CDK1-downstream-DNMT1}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "DNMT1"
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == "CDK1" & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r BRCA-kinase-TP53-trans-CHEK1}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "CHEK1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+
+```{r BRCA-TP53-CHEK1-downstream}
+gene_altered <- "TP53"
+gene_affected <- "CHEK1"
+cancer_tmp <- "BRCA"
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans" & regression$is.direct == T]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+```
+
+```{r BRCA-TP53-CHEK2-downstream}
+gene_altered <- "TP53"
+gene_affected <- "CHEK2"
+cancer_tmp <- "BRCA"
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+```
+
+```{r BRCA-kinase-TP53-trans-CHEK2}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "CHEK2"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r BRCA-TP53-MET-downstream}
+gene_altered <- "TP53"
+gene_affected <- "MET"
+cancer_tmp <- "BRCA"
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+```
+
+```{r BRCA-kinase-TP53-trans-MET}
+cancer_tmp <- "BRCA"
+gene_altered <- "TP53"
+gene_affected <- "MET"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+
+```{r BRCA-TP53-trans}
+gene_altered <- "TP53"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum == 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+## because TP53 is transcription factor, so we only look for transcriptional effect
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum == 0) %>%
+  filter(SUB_GENE %in% pair_tab_annotated$SUB_GENE[pair_tab_annotated$GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == gene_altered & mut_impact_tab$fdr_by_gene < 0.05 & mut_impact_tab$SUB_GENE.is_TF_downstream == T] & pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum == 0) %>%
+  filter(SUB_GENE %in% pair_tab_annotated$SUB_GENE[pair_tab_annotated$GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == gene_altered & mut_impact_tab$fdr_by_gene < 0.05 & mut_impact_tab$SUB_GENE.is_TF_downstream == T] & pair_tab_annotated$SUB_GENE.is_complex_partner]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+
+```
+
+
+
+
+### BRCA-SMG-other
+#### BRCA-SMG-other-CDH1
+```{r BRCA-CDH1-cis}
+gene_altered <- "CDH1"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r BRCA-CDH1-trans}
+gene_altered <- "CDH1"
+cancer_tmp <- "BRCA"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+```
+
+
+
+## UCEC
+### UCEC-SMG-kinase
+```{r UCEC-kinase-overview}
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(GENE) %>%
+  unique
+```
+
+#### UCEC-SMG-kinase-JAK1
+```{r UCEC-JAK1-cis}
+gene_altered <- "JAK1"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r UCEC-kinase-JAK1-trans}
+cancer_tmp <- "UCEC"
+gene_altered <- "JAK1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(SUB_GENE) %>%
+  unique()
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+```{r UCEC-kinase-JAK1-trans-IRS1}
+cancer_tmp <- "UCEC"
+gene_altered <- "JAK1"
+gene_affected <- "IRS1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(SUB_MOD_RSD == "Y632") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-kinase-JAK1-trans-STAT3}
+cancer_tmp <- "UCEC"
+gene_altered <- "JAK1"
+gene_affected <- "STAT3"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-kinase-AKT1-STAT3-regression}
+cancer_tmp <- "UCEC"
+gene_affected <- "STAT3"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(regulated == T) %>%
+  filter(SUB_GENE == "STAT3") %>%
+  select(pair, FDR_pho_kin, coef_pho_kin, is.direct) %>%
+  arrange(FDR_pho_kin)
+```
+
+
+#### UCEC-SMG-kinase-MAP3K4
+```{r BRCA-MAP3K4-cis}
+cancer_tmp <- "UCEC"
+gene_altered <- "MAP3K4"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-kinase-MAP3K4-trans}
+cancer_tmp <- "UCEC"
+gene_altered <- "MAP3K4"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE.is_kinase_substrate == T) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  # filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+```
+
+
+
+
+
+#### UCEC-SMG-kinase-PTEN
+```{r BRCA-PTEN-cis}
+cancer_tmp <- "UCEC"
+gene_altered <- "PTEN"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-kinase-PTEN-trans}
+cancer_tmp <- "UCEC"
+gene_altered <- "PTEN"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE.is_phosphatase_substrate == T) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+```
+
+```{r UCEC-kinase-PTEN-trans-SLC9A3R1}
+cancer_tmp <- "UCEC"
+gene_altered <- "PTEN"
+gene_affected <- "SLC9A3R1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-kinase-PTEN-trans-SHC1}
+cancer_tmp <- "UCEC"
+gene_altered <- "PTEN"
+gene_affected <- "SHC1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-kinase-PTEN-trans-PDGFRB}
+cancer_tmp <- "UCEC"
+gene_altered <- "PTEN"
+gene_affected <- "PDGFRB"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+### UCEC-SMG-TF
+
+```{r UCEC-kinase-overview}
+mut_impact_tab %>% 
+  filter(cancer == "UCEC") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(GENE) %>%
+  unique()
+```
+#### UCEC-SMG-TF-CTCF
+```{r BRCA-CTCF-cis}
+cancer_tmp <- "UCEC"
+gene_altered <- "CTCF"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r BRCA-CTCF-trans}
+gene_altered <- "CTCF"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-kinase-CTCF-trans-CDKN2A}
+cancer_tmp <- "UCEC"
+gene_altered <- "CTCF"
+gene_affected <- "CDKN2A"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% "RB1") %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% "CDK4") %>%
+  # filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% "RB1") %>%
+  # filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+```
+
+
+#### UCEC-SMG-TF-CTNNB1
+```{r CO-CTNNB1-cis}
+gene_altered <- "CTNNB1"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-CTNNB1-trans}
+gene_altered <- "CTNNB1"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(SUB_GENE) %>%
+  unique
+```
+
+```{r UCEC-kinase-CTNNB1-trans-PPP2R5A}
+cancer_tmp <- "UCEC"
+gene_altered <- "CTNNB1"
+gene_affected <- "PPP2R5A"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  filter(SUB_GENE %in% pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE == gene_affected & pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  # filter(affected_exp_type == "PRO") %>%
+  filter(SUB_GENE %in% pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE == gene_affected & pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+```
+#### UCEC-SMG-TF-CTNNB1-second-degree-kinase
+```{r CO-CTNNB1-second-degree-kinase}
+gene_altered <- "CTNNB1"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(pair_cat_signaling_sum == 0) %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(SUB_GENE) %>%
+  unique
+```
+
+```{r CO-CTNNB1-second-degree-kinase-CSNK1A1}
+gene_altered <- "CTNNB1"
+cancer_tmp <- "UCEC"
+gene_affected <- "CSNK1A1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(SUB_MOD_RSD == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-CTNNB1-second-degree-kinase-PRKCD}
+gene_altered <- "CTNNB1"
+cancer_tmp <- "UCEC"
+gene_affected <- "PRKCD"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(SUB_MOD_RSD == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-CTNNB1-second-degree-kinase-PRKCD-upstream}
+gene_altered <- "CTNNB1"
+cancer_tmp <- "UCEC"
+gene_affected <- "PRKCD"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  filter(SUB_GENE %in% pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE == gene_affected & pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  filter(SUB_GENE %in% pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE == gene_affected & pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  filter(SUB_GENE %in% pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE == gene_affected & pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  filter(SUB_GENE %in% pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE == gene_affected & pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+```
+#### UCEC-SMG-TF-TP53
+```{r UCEC-TP53-cis}
+gene_altered <- "TP53"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r UCEC-TP53-trans}
+gene_altered <- "TP53"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+```{r UCEC-TP53-through-TF}
+gene_altered <- "TP53"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(SUB_GENE.is_TF_downstream == T) %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+```{r UCEC-kinase-TP53-trans-EGFR}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "EGFR"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-TP53-through-PPI}
+gene_altered <- "TP53"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(SUB_GENE.is_TF_downstream == F & SUB_GENE.is_complex_partner == T) %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+```{r UCEC-TP53-trans}
+gene_altered <- "TP53"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE %in% tf_tab$target_genesymbol[tf_tab$source_genesymbol == gene_altered & tf_tab$is_stimulation == 1]) %>%
+  filter(meddiff < 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE %in% tf_tab$target_genesymbol[tf_tab$source_genesymbol == gene_altered & tf_tab$is_inhibition == 1]) %>%
+  filter(meddiff > 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-TP53-PLK1}
+gene_altered <- "TP53"
+gene_affected <- "PLK1"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-TP53-PLK1-downstream}
+gene_altered <- "TP53"
+gene_affected <- "PLK1"
+cancer_tmp <- "UCEC"
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans" & regression$is.direct == T]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+```
+
+```{r UCEC-kinase-TP53-trans-TP53BP1}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "TP53BP1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-kinase-TP53-trans-FOXO3}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "FOXO3"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% "FOXO3") %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(p > 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(-num)
+```
+
+```{r UCEC-kinase-TP53-PLK1-downstream-FOXO3-regression}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "FOXO3"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(regulated == T) %>%
+  filter(SUB_GENE == "FOXO3") %>%
+  select(pair, FDR_pho_kin, coef_pho_kin, is.direct) %>%
+  arrange(FDR_pho_kin)
+
+```
+
+
+```{r UCEC-kinase-TP53-trans-CDK1}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "CDK1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r UCEC-TP53-CDK1-downstream}
+gene_altered <- "TP53"
+gene_affected <- "CDK1"
+cancer_tmp <- "UCEC"
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans" & regression$is.direct == T]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == "TP53BP1") %>%
+  filter(SUB_MOD_RSD == "S1553") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == "KRT8") %>%
+  filter(SUB_MOD_RSD == "S63") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+```
+
+```{r UCEC-kinase-TP53-trans-KRT8}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "KRT8"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r UCEC-kinase-TP53-trans-CHEK1}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "CHEK1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-TP53-CHEK1-downstream}
+gene_altered <- "TP53"
+gene_affected <- "CHEK1"
+cancer_tmp <- "UCEC"
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans" & regression$is.direct == T]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+```
+
+```{r UCEC-kinase-TP53-trans-MKI67}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "MKI67"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-kinase-TP53-trans-RB1}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "RB1"
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_regulated_sites %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r UCEC-kinase-TP53-trans-CHEK2}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "CHEK2"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-TP53-CHEK2-downstream}
+gene_altered <- "TP53"
+gene_affected <- "CHEK2"
+cancer_tmp <- "UCEC"
+
+mut_impact_regulated_sites %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE %in% regression$SUB_GENE[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  filter(SUB_MOD_RSD %in% regression$SUB_MOD_RSD[regression$GENE == gene_affected & regression$regulated == T & regression$Cancer == cancer_tmp & regression$SELF == "trans"]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+```
+
+```{r UCEC-kinase-TP53-trans-EGFR}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "EGFR"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-kinase-TP53-trans-IGF1R}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "IGF1R"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-kinase-TP53-trans-AKT1}
+cancer_tmp <- "UCEC"
+gene_altered <- "TP53"
+gene_affected <- "AKT1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+### UCEC-SMG-other
+#### UCEC-SMG-other-FLNA
+```{r BRCA-FLNA-cis}
+gene_altered <- "FLNA"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-FLNA-trans-kinase}
+gene_altered <- "FLNA"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_complex_partner == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+```{r UCEC-FLNA-trans-kinase-through-PPI}
+gene_altered <- "FLNA"
+cancer_tmp <- "UCEC"
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_complex_partner]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+
+
+
+#### UCEC-SMG-other-KRAS
+```{r BRCA-FLNA-cis}
+gene_altered <- "KRAS"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-KRAS-trans-kinase}
+gene_altered <- "KRAS"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_complex_partner == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+```{r UCEC-FLNA-trans-kinase-through-PPI}
+gene_altered <- "KRAS"
+cancer_tmp <- "UCEC"
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_complex_partner]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+
+#### UCEC-SMG-other-PIK3R1
+```{r UCEC-FLNA-cis}
+gene_altered <- "PIK3R1"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-PIK3R1-trans-kinase}
+gene_altered <- "PIK3R1"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_complex_partner == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+```{r UCEC-PIK3R1-trans-kinase-PIK3CA}
+gene_altered <- "PIK3R1"
+gene_affected <- "PIK3CA"
+cancer_tmp <- "UCEC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == "AKT1") %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE == gene_affected & pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(p < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, node_previous_SUB_GENE) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r UCEC-FLNA-trans-kinase-through-PPI}
+gene_altered <- "KRAS"
+cancer_tmp <- "UCEC"
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_complex_partner]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+
+
+
+
+
+
+
+
+
+## CO
+### CO-SMG-kinase
+```{r CO-kinase-overview}
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(GENE) %>%
+  unique
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(GENE) %>%
+  unique
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% c(kinases, phosphatases)) %>%
+  filter(p < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(GENE) %>%
+  unique
+```
+#### CO-SMG-kinase-ATM
+```{r CO-ATM-cis}
+gene_altered <- "ATM"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-kinase-ATM-trans}
+cancer_tmp <- "CO"
+gene_altered <- "ATM"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+```
+
+```{r CO-kinase-ATM-trans-PPP1R2}
+cancer_tmp <- "CO"
+gene_altered <- "ATM"
+gene_affected <- "PPP1R2"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-kinase-ATM-trans-TP53BP1}
+cancer_tmp <- "CO"
+gene_altered <- "ATM"
+gene_affected <- "TP53BP1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+
+
+
+#### CO-SMG-kinase-BRAF
+```{r CO-BRAF-cis}
+gene_altered <- "BRAF"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-kinase-BRAF-trans}
+cancer_tmp <- "CO"
+gene_altered <- "BRAF"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE.is_kinase_substrate == T) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  filter(SUB_GENE.is_kinase_substrate == T) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(SUB_GENE.is_kinase_substrate == T) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+```
+```{r CO-kinase-BRAF-trans-EEF1A1}
+cancer_tmp <- "CO"
+gene_altered <- "BRAF"
+gene_affected <- "EEF1A1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(SUB_MOD_RSD == "Y632") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+### CO-SMG-TF
+
+```{r CO-kinase-overview}
+mut_impact_tab %>% 
+  filter(cancer == "CO") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(GENE) %>%
+  unique()
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "CO") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(GENE) %>%
+  unique()
+```
+
+#### CO-SMG-TF-ARID1A
+```{r CO-ARID1A-cis}
+gene_altered <- "ARID1A"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-ARID1A-trans}
+gene_altered <- "ARID1A"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(p < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-ARID1A-trans-through-TF}
+gene_altered <- "ARID1A"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_TF_downstream == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_TF_downstream == T) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_TF_downstream == T) %>%
+  filter(p < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-ARID1A-trans-second-degree}
+gene_altered <- "ARID1A"
+cancer_tmp <- "CO"
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(p < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-ARID1A-trans-through-PPI}
+gene_altered <- "ARID1A"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_complex_partner == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_TF_downstream == T) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_TF_downstream == T) %>%
+  filter(p < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-ARID1A-trans-through-PPI}
+gene_altered <- "ARID1A"
+cancer_tmp <- "CO"
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene)
+```
+
+#### CO-SMG-TF-CTNNB1
+```{r CO-CTNNB1-cis}
+gene_altered <- "CTNNB1"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-CTNNB1-trans}
+gene_altered <- "CTNNB1"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(SUB_GENE) %>%
+  unique
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  select(SUB_GENE) %>%
+  unique
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(p < 0.05) %>%
+  select(SUB_GENE) %>%
+  unique
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(SUB_GENE) %>%
+  unique
+```
+
+#### CO-SMG-TF-TP53
+```{r CO-TP53-cis}
+gene_altered <- "TP53"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r CO-TP53-trans}
+gene_altered <- "TP53"
+cancer_tmp <- "CO"
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  select(SUB_GENE) %>%
+  unique
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(SUB_GENE) %>%
+  unique
+```
+
+
+```{r CO-TP53-through-TF-first-degree-second-degree}
+gene_altered <- "TP53"
+cancer_tmp <- "CO"
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$GENE == gene_altered & mut_impact_tab$affected_exp_type != "RNA" & mut_impact_tab$cancer == cancer_tmp & mut_impact_tab$fdr_by_gene < 0.1 & mut_impact_tab$SUB_GENE.is_TF_downstream]) %>%
+  filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_TF_downstream | pair_tab_annotated$SUB_GENE.is_complex_partner]) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  select(SUB_GENE) %>%
+  unique
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$GENE == gene_altered & mut_impact_tab$affected_exp_type != "RNA" & mut_impact_tab$cancer == cancer_tmp & mut_impact_tab$fdr_by_gene < 0.1 & mut_impact_tab$SUB_GENE.is_TF_downstream]) %>%
+  filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_TF_downstream | pair_tab_annotated$SUB_GENE.is_complex_partner]) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  select(pair_pro_previous) %>%
+  unique
+```
+
+```{r CO-TP53-MAP3K5}
+gene_altered <- "TP53"
+gene_affected <- "MAP3K5"
+cancer_tmp <- "CO"
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$GENE == gene_altered & mut_impact_tab$affected_exp_type != "RNA" & mut_impact_tab$cancer == cancer_tmp & mut_impact_tab$fdr_by_gene < 0.05 & mut_impact_tab$SUB_GENE.is_TF_downstream]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+    filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$GENE == gene_altered & mut_impact_tab$affected_exp_type != "RNA" & mut_impact_tab$cancer == cancer_tmp & mut_impact_tab$fdr_by_gene < 0.05 & mut_impact_tab$SUB_GENE.is_TF_downstream]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+    filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$GENE == gene_altered & mut_impact_tab$affected_exp_type != "RNA" & mut_impact_tab$cancer == cancer_tmp & mut_impact_tab$fdr_by_gene < 0.05 & mut_impact_tab$SUB_GENE.is_TF_downstream]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == "E2F1") %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == "E2F1") %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == "E2F1") %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-TP53-first-degree-CTNNB1}
+gene_altered <- "TP53"
+gene_affected <- "CTNNB1"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+```
+
+```{r CO-TP53-first-degree-MSH2}
+gene_altered <- "TP53"
+gene_affected <- "MSH2"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(affected_exp_type != "RNA") %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$GENE == gene_altered & mut_impact_tab$affected_exp_type != "RNA" & mut_impact_tab$cancer == cancer_tmp & mut_impact_tab$fdr_by_gene < 0.1 & mut_impact_tab$SUB_GENE.is_TF_downstream]) %>%
+  filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_TF_downstream | pair_tab_annotated$SUB_GENE.is_complex_partner]) %>%
+  filter(node_previous == "MSH2") %>%
+  filter(fdr_by_gene < 0.1)
+```
+
+```{r CO-kinase-TP53-trans-EGFR}
+cancer_tmp <- "CO"
+gene_altered <- "TP53"
+gene_affected <- "EGFR"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-kinase-TP53-trans-IGF1R}
+cancer_tmp <- "CO"
+gene_altered <- "TP53"
+gene_affected <- "IGF1R"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-kinase-TP53-trans-AKT1}
+cancer_tmp <- "CO"
+gene_altered <- "TP53"
+gene_affected <- "AKT1"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+### CO-SMG-other
+#### CO-SMG-other-KRAS
+```{r BRCA-FLNA-cis}
+gene_altered <- "KRAS"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-KRAS-trans-kinase}
+gene_altered <- "KRAS"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_complex_partner == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+#### CO-SMG-other-APC
+```{r CO-APC-cis}
+gene_altered <- "APC"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-APC-trans-kinase}
+gene_altered <- "APC"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_complex_partner == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+```{r CO-APC-trans-kinase-through-PPI}
+gene_altered <- "APC"
+cancer_tmp <- "CO"
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_complex_partner]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+#### CO-SMG-other-ACVR2A
+```{r CO-ACVR2A-cis}
+gene_altered <- "ACVR2A"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-ACVR2A-trans-kinase}
+gene_altered <- "ACVR2A"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_complex_partner == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+
+```{r CO-ACVR2A-trans-kinase-through-PPI}
+gene_altered <- "ACVR2A"
+cancer_tmp <- "CO"
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  # filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_complex_partner]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### CO-SMG-other-TGFBR2
+```{r CO-FLNA-cis}
+gene_altered <- "TGFBR2"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CO-TGFBR2-trans-kinase}
+gene_altered <- "TGFBR2"
+cancer_tmp <- "CO"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_complex_partner == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+```{r CO-TGFBR2-trans-kinase-through-PPI}
+gene_altered <- "TGFBR2"
+cancer_tmp <- "CO"
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  # filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_complex_partner]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+
+
+
+
+
+
+
+
+
+## CCRCC
+### CCRCC-SMG-kinase
+```{r CCRCC-kinase-overview}
+cancer_tmp <- "CCRCC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0 | SELF == "cis") %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(GENE) %>%
+  unique
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(GENE) %>%
+  unique
+```
+
+#### CCRCC-SMG-kinase-MTOR
+```{r CCRCC-MTOR-cis}
+gene_altered <- "MTOR"
+cancer_tmp <- "CCRCC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CCRCC-kinase-MTOR-trans}
+cancer_tmp <- "CCRCC"
+gene_altered <- "MTOR"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(num > 4) %>%
+  filter(SUB_GENE.is_kinase_substrate == T) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(meddiff > 0) %>%
+  filter(pair %in% regression$pair[regression$Cancer == cancer_tmp & regression$P_pho_kin < 0.05 & regression$coef_pho_kin > 0]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(p)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(num > 4) %>%
+  filter(SUB_GENE.is_kinase_substrate == T) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(meddiff > 0) %>%
+  filter(pair %in% regression$pair[regression$Cancer == cancer_tmp & regression$FDR_pho_kin < 0.1 & regression$coef_pho_kin > 0]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(p)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(num > 4) %>%
+  filter(SUB_GENE.is_kinase_substrate == T) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(meddiff > 0) %>%
+  filter(pair %in% regression$pair[regression$Cancer == cancer_tmp & regression$FDR_pho_kin < 0.05 & regression$coef_pho_kin > 0]) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(p)
+```
+
+```{r CCRCC-kinase-MTOR-trans-RICTOR}
+cancer_tmp <- "CCRCC"
+gene_altered <- "MTOR"
+gene_affected <- "RICTOR"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CCRCC-kinase-MTOR-trans-EIF4EBP2}
+cancer_tmp <- "CCRCC"
+gene_altered <- "MTOR"
+gene_affected <- "EIF4EBP2"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(SUB_MOD_RSD == "Y632") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CCRCC-kinase-MTOR-trans-WASHC2A}
+cancer_tmp <- "CCRCC"
+gene_altered <- "MTOR"
+gene_affected <- "WASHC2A"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(SUB_GENE %in% gene_affected) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(SUB_MOD_RSD == "Y632") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+#### CCRCC-SMG-phosphatase-PTEN
+```{r CCRCC-PTEN-cis}
+gene_altered <- "PTEN"
+cancer_tmp <- "CCRCC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CCRCC-kinase-PTEN-trans}
+cancer_tmp <- "CCRCC"
+gene_altered <- "PTEN"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(fdr_by_gene < 0.1) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% gene_altered) %>%
+  filter(p < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+```
+
+
+
+### CCRCC-SMG-TF
+
+```{r CCRCC-kinase-overview}
+mut_impact_tab %>% 
+  filter(cancer == "CCRCC") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(GENE) %>%
+  unique()
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "CCRCC") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(GENE) %>%
+  unique()
+```
+
+#### CCRCC-SMG-TF-TP53
+```{r CCRCC-TP53-cis}
+gene_altered <- "TP53"
+cancer_tmp <- "CCRCC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+
+```{r CCRCC-TP53-trans}
+gene_altered <- "TP53"
+cancer_tmp <- "CCRCC"
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(SUB_GENE) %>%
+  unique
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(SUB_GENE) %>%
+  unique
+```
+
+
+```{r CCRCC-TP53-through-TF-first-degree-seCCRCCnd-degree}
+gene_altered <- "TP53"
+cancer_tmp <- "CCRCC"
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  filter(pair_pro_previous %in% pair_tab_annotated$pair_pro[pair_tab_annotated$GENE == gene_altered & pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$GENE == gene_altered & mut_impact_tab$affected_exp_type != "RNA" & mut_impact_tab$cancer == cancer_tmp]) %>%
+  # filter(node_previous %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == gene_altered & mut_impact_tab$fdr_by_gene < 0.05 & mut_impact_tab$SUB_GENE.is_TF_downstream]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(SUB_GENE) %>%
+  unique
+
+
+```
+
+```{r CCRCC-TP53-through-TF-first-degree-GSK3A}
+gene_altered <- "TP53"
+cancer_tmp <- "CCRCC"
+gene_affected <- "GSK3A"
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(pair) %>%
+  unique()
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(p < 0.05) %>%
+  filter(affected_exp_type == "RNA")
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(p < 0.05) %>%
+  filter(affected_exp_type == "PRO")
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(SUB_MOD_RSD == "Y279") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous, node_previous_SUB_MOD_RSD) %>%
+  filter(pair_pro_previous %in% pair_tab_annotated$pair_pro[pair_tab_annotated$GENE == gene_altered & pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$GENE == gene_altered & mut_impact_tab$affected_exp_type != "RNA" & mut_impact_tab$cancer == cancer_tmp]) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == "AKT1")
+
+```
+
+```{r CCRCC-TP53-through-TF-first-degree-MAPK1}
+gene_altered <- "TP53"
+cancer_tmp <- "CCRCC"
+gene_affected <- "MARK1"
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(pair) %>%
+  unique()
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(p < 0.05) %>%
+  filter(affected_exp_type == "RNA")
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(p < 0.05) %>%
+  filter(affected_exp_type == "PRO")
+
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_affected) %>%
+  filter(SUB_MOD_RSD == "Y279") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous, node_previous_SUB_MOD_RSD) %>%
+  filter(pair_pro_previous %in% pair_tab_annotated$pair_pro[pair_tab_annotated$GENE == gene_altered & pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$GENE == gene_altered & mut_impact_tab$affected_exp_type != "RNA" & mut_impact_tab$cancer == cancer_tmp]) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == "AKT1")
+```
+
+
+### CCRCC-SMG-other
+#### CCRCC-SMG-other-VHL
+```{r CCRCC-VHL-cis}
+gene_altered <- "VHL"
+cancer_tmp <- "CCRCC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE == gene_altered) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+```
+
+```{r CCRCC-VHL-trans-kinase}
+gene_altered <- "VHL"
+cancer_tmp <- "CCRCC"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05)
+
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE.is_complex_partner == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == gene_altered) %>%
+  filter(SUB_GENE != gene_altered) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_MOD_RSD != "RNA") %>%
+  select(SUB_GENE) %>%
+  unique()
+```
+
+## OV
+### OV-SMG-kinase
+```{r OV-kinase-overview}
+cancer_tmp <- "OV"
+mut_impact_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0 | SELF == "cis") %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(GENE) %>%
+  unique
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type != "RNA") %>%
+  select(GENE) %>%
+  unique
+```
+
+### OV-SMG-other
+```{r OV-kinase-overview}
+mut_impact_tab %>% 
+  filter(cancer == "OV") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(GENE) %>%
+  unique()
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "OV") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(GENE) %>%
+  unique()
+
+mut_impact_tab %>% 
+  filter(cancer == "OV") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(fdr_by_gene < 0.05)
+
+mut_impact_tab %>% 
+  filter(cancer == "OV") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(fdr_by_gene < 0.1)
+```
+
+
+
+
+

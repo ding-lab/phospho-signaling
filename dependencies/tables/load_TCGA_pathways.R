@@ -89,6 +89,7 @@ for (pathway_name in keys2add) {
   tcga_pathways_pluskegg_and_pathway[[pathway_name]] <- data.frame(Gene = KEGG[[keggs2add[pathway_name]]])
 }
 tcga_pathways_pluskegg_and_pathway[["MAPK"]] <- data.frame(Gene = c("MAP3K5", "MAP3K8", "BRAF", "ARAF", "RAF1", "MAP2K1", "MAP2K2", "MAP2K4", "MAP3K1", "MAPK1", "MAPK3", "MAPK9", "MAPK14", "MAPK13"))
+length(unique(unlist(tcga_pathways_pluskegg_and_pathway)))
 # set color for each pathway ---------------------------------------------
 # tcga_path_colors <- c(brewer.pal(n = length(pathway_names), name = "Dark2"), brewer.pal(n = length(pathway_names), name = "Set1"))
 # tcga_path_colors <- tcga_path_colors[1:length(pathway_names)]

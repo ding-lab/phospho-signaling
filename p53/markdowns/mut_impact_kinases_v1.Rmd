@@ -1,0 +1,81 @@
+---
+title: "Untitled"
+output: html_document
+---
+## source
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+setwd(baseD)
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+library(knitr)
+opts_knit$set(root.dir = baseD)
+
+```
+
+## inputs
+``` {r vairiables}
+num_genoalt_thres <- 5
+cancers2proces <- c("BRCA", "OV", "CO", "UCEC", "CCRCC", "LIHC")
+```
+
+```{r input-mut_impact_tab}
+mut_impact_tab <- fread(input = "./cptac2p/analysis_results/p53/tables/test_mut_impact_proteome_TP53/TP53_mut_impact_proteome_RNA_cptac2p_cptac3_tab.txt", data.table = F)
+
+mut_impact_tab$GENE.is_SMG <- get_SMG_by_cancer(gene_vector = mut_impact_tab$GENE, cancer_vector = mut_impact_tab$cancer)
+```
+
+```{r input-pair-table}
+pair_tab_annotated <- fread(input = "./cptac2p/analysis_results/dependencies/tables/compile_protein_pair_table/protein_pair_table.txt", data.table = F)
+colnames(pair_tab_annotated)
+pair_cat <- colnames(pair_tab_annotated)[!(colnames(pair_tab_annotated) %in% c("GENE", "SUB_GENE", "pair_pro"))]
+pair_cat
+pair_cat_signaling <- c("SUB_GENE.is_TF_downstream", "SUB_GENE.is_kinase_substrate", "SUB_GENE.is_phosphatase_substrate", "SUB_GENE.is_complex_partner")
+tf_tab <- fread(input = "./Ding_Lab/Projects_Current/TP53_shared_data/resources/PPI/TF_interactions.txt", data.table = F)
+
+```
+
+```{r}
+mut_impact_tab %>%
+  filter(GENE == "TP53" & SUB_GENE.is_kinase == T & SUB_GENE.is_downstream == T & fdr < 0.05)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53" & SUB_GENE.is_kinase == T & SUB_GENE.is_downstream == F & fdr < 0.05)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53" & SUB_GENE.is_phosphatase == T & SUB_GENE.is_downstream == T & fdr < 0.05)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53" & SUB_GENE.is_phosphatase == T & SUB_GENE.is_downstream == F & fdr < 0.05)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53" & SUB_GENE == "CDK1")
+
+mut_impact_tab %>%
+  filter(GENE == "TP53" & SUB_GENE == "CDK2")
+
+mut_impact_tab %>%
+  filter(GENE == "TP53" & SUB_GENE == "AURKA")
+
+mut_impact_tab %>%
+  filter(GENE == "TP53" & SUB_GENE == "PPP2CA")
+
+mut_impact_tab %>%
+  filter(GENE == "TP53" & SUB_GENE == "PPP2CB")
+
+mut_impact_tab %>%
+  filter(GENE == "TP53" & SUB_GENE == "E2F1")
+```
+
+```{r BRCA}
+cancer_tmp <- "BRCA"
+mut_impact_tab %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(SUB_GENE.is_kinase == T & SUB_GENE.is_downstream == T & fdr < 0.05)
+
+
+mut_impact_tab %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(SUB_GENE.is_kinase == T & SUB_GENE.is_downstream == F & fdr < 0.05)
+
+```

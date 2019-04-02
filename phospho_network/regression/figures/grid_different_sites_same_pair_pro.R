@@ -8,34 +8,20 @@ if (wd != "/Users/yigewu/Box Sync") {
   setwd("/Users/yigewu/Box Sync")
 }
 source('./cptac2p_analysis/phospho_network/phospho_network_shared.R')
+source('./cptac2p_analysis/phospho_network/phospho_network_plotting.R')
 
 
 # set variables -----------------------------------------------------------
 reg_nonNA <- 20
+size <- 83
 cancers2process <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
 
 
 # gather regression results ----------------------------------------------------------------
-sup_tab <- NULL
-for (cancer in cancers2process) {
-  ## input the regression table for only pairs detectable in all cancers
-  file_path_tmp <- paste0("./cptac2p/analysis_results/phospho_network/regression/figures/plot_downsize_affect_regression/", "regression_", cancer, "_size", size, "_detected_in_", paste0(cancers2process, collapse = "_"),".txt")
-  tab_tmp <- fread(input = file_path_tmp, data.table = F)
-  print(nrow(tab_tmp))
-  tab_tmp <- tab_tmp[order(tab_tmp$FDR_pho_kin, tab_tmp$pair, decreasing = F),]
-  tab_tmp$GENE <- tab_tmp$KINASE
-  tab_tmp$SUB_GENE <- tab_tmp$SUBSTRATE
-  tab_tmp %>% head()
-  tab_tmp <- tab_tmp[!duplicated(tab_tmp$pair),]
-  if (is.null(sup_tab)) {
-    sup_tab <- tab_tmp
-    order_cols <- colnames(tab_tmp)
-  } else {
-    sup_tab <- rbind(sup_tab, tab_tmp[, order_cols])
-  }
-}
+fdr_thres <- 0.1
+file_path_tmp <- paste0("./cptac2p/analysis_results/phospho_network/regression/tables/generate_regression_regulated_uniq_marked/",  "regression_size", size, "_FDR", fdr_thres, "_detected_in_", paste0(cancers2process, collapse = "_"),".txt")
+sup_tab <- fread(input = file_path_tmp, data.table = F)
 sup_tab$pair_pro <- paste0(sup_tab$GENE, ":", sup_tab$SUB_GENE)
-
 
 # bussiness ---------------------------------------------------------------
 
@@ -71,7 +57,7 @@ for (SELF in c("cis", "trans")) {
   }
   tab2p$y_print <- y_print
   tab2p$Cancer <- order_cancer_rev(tab2p$Cancer)
-  
+    
   p <- ggplot()
   p <- p + geom_bar(data = tab2p, mapping = aes(x = pair_pro, y = bar_len, fill = Cancer), stat = "identity", position = "stack", color = "black")
   p <- p + geom_text(data = tab2p, mapping = aes(x = pair_pro, y = y_print, label = SUB_MOD_RSD), size = 2.5)
@@ -81,45 +67,48 @@ for (SELF in c("cis", "trans")) {
   p <- p + theme_nogrid()
   p <- p + theme(axis.text.x = element_blank(), axis.ticks = element_blank(),
                  axis.title.y = element_blank(), axis.title.x = element_blank(),
-                 # strip.text.x = element_text(size = 5, angle = 90),
+                 strip.text.y = element_text(size = 10, angle = 0),
+                 strip.background = element_rect(fill = "white", color = "white"),
                  panel.spacing.y = unit(0, "lines"),
                  panel.spacing.x = unit(0, "lines"))
+  p <- p + guides(fill = F)
   p
   fn <- paste0(makeOutDir(resultD = resultD), "cancer_specific_", SELF, "_regulated_pairs_in_SMGs.pdf")
-  ggsave(filename = fn, width = 5, height = 4)
+  ggsave(filename = fn, width = 4.5, height = 5)
 
 }
 
-mut_cnv_cans %>%
-  filter(GENE == "CTNNB1", SUB_GENE %in% c("PRKD1", "PRKCD", "PRKACB", "PRKACA", "PAK4", "GSK3B"), cancer == "CO", p < 0.1) %>%
-  arrange(p)
-## PRKD1
-
-mut_cnv_cans %>%
-  filter(SUB_GENE %in% c("GSK3B"), cancer == "CO") %>%
-  arrange(p)
-
-mut_cnv_cans %>%
-  filter(GENE == "CTNNB1", SUB_GENE %in% c("PRKD1", "PRKCD", "PRKACB", "PRKACA", "PAK4", "GSK3B"), cancer == "UCEC", p < 0.05) %>%
-  arrange(p)
-## confusing down-regualtion
-
-mut_cnv_cans %>%
-  filter(GENE == "RB1", SUB_GENE %in% c("PRKAA1", "PPP1CB", "CDK18", "CDK1"), cancer == "OV") %>%
-  arrange(p)
-
-mut_cnv_cans %>%
-  filter(GENE == "RB1", SUB_GENE %in% c("PRKAA1", "PPP1CB", "CDK18", "CDK1"), cancer == "BRCA") %>%
-  arrange(p)
-
-mut_cnv_cans %>%
-  filter(GENE == "TP53", SUB_GENE %in% c("IKBKB"), cancer == "OV") %>%
-  arrange(p)
-
-mut_cnv_cans %>%
-  filter(GENE == "PTEN", SUB_GENE %in% c("CREB1"), cancer == "CCRCC") %>%
-  arrange(p)
-
-mut_cnv_cans %>%
-  filter(GENE == "MAP2K4", SUB_GENE %in% c("PAK1"), cancer == "BRCA") %>%
-  arrange(p)
+stop()
+# mut_cnv_cans %>%
+#   filter(GENE == "CTNNB1", SUB_GENE %in% c("PRKD1", "PRKCD", "PRKACB", "PRKACA", "PAK4", "GSK3B"), cancer == "CO", p < 0.1) %>%
+#   arrange(p)
+# ## PRKD1
+# 
+# mut_cnv_cans %>%
+#   filter(SUB_GENE %in% c("GSK3B"), cancer == "CO") %>%
+#   arrange(p)
+# 
+# mut_cnv_cans %>%
+#   filter(GENE == "CTNNB1", SUB_GENE %in% c("PRKD1", "PRKCD", "PRKACB", "PRKACA", "PAK4", "GSK3B"), cancer == "UCEC", p < 0.05) %>%
+#   arrange(p)
+# ## confusing down-regualtion
+# 
+# mut_cnv_cans %>%
+#   filter(GENE == "RB1", SUB_GENE %in% c("PRKAA1", "PPP1CB", "CDK18", "CDK1"), cancer == "OV") %>%
+#   arrange(p)
+# 
+# mut_cnv_cans %>%
+#   filter(GENE == "RB1", SUB_GENE %in% c("PRKAA1", "PPP1CB", "CDK18", "CDK1"), cancer == "BRCA") %>%
+#   arrange(p)
+# 
+# mut_cnv_cans %>%
+#   filter(GENE == "TP53", SUB_GENE %in% c("IKBKB"), cancer == "OV") %>%
+#   arrange(p)
+# 
+# mut_cnv_cans %>%
+#   filter(GENE == "PTEN", SUB_GENE %in% c("CREB1"), cancer == "CCRCC") %>%
+#   arrange(p)
+# 
+# mut_cnv_cans %>%
+#   filter(GENE == "MAP2K4", SUB_GENE %in% c("PAK1"), cancer == "BRCA") %>%
+#   arrange(p)

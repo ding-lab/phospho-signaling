@@ -18,9 +18,13 @@ setwd(baseD)
 
 color_cancers <- c(colors['BRCA'], colors['OV'], colors['COAD'], "#bdbdbd"); names(color_cancers) <- c("BRCA", "OV", "CO", "other")
 color_cancers2 <- c(colors['BRCA'], colors['OV'],  "#39BEB1", colors['UCEC'], colors['KIRC'], colors['LIHC'], "grey50"); names(color_cancers2) <- c("BRCA", "OV", "CO", "UCEC","CCRCC", "LIHC", "other")
-
+color_5cancers <- c("#FF7F00", set1[1], "#33A02C", "#6A3D9A", set1[2]); names(color_5cancers) <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
 ## colors for different amino acid PTMs
 color_aa <- c("#8da0cb", "#e78ac3", "#a6d854"); names(color_aa) <- c("S", "T", "Y")
+
+
+# compare -----------------------------------------------------------------
+symnum.args <- list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns"))
 
 
 

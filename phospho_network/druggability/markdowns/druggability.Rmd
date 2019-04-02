@@ -1,0 +1,240 @@
+---
+title: "drugability"
+output: html_document
+---
+## source
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+library(knitr)
+opts_knit$set(root.dir = baseD)
+setwd(baseD)
+source('./cptac2p_analysis/preprocess_files/preprocess_files_shared.R')
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+```
+
+## set variables
+``` {r variables}
+cancers2process <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
+reg_sig <- c(0.05, 0.05); names(reg_sig) <- c("kinase", "phosphatase")
+```
+
+
+
+## inputs
+
+```{r input-regression-and-annotate}
+regression <- fread(input = paste0(ppnD, "regression/tables/annotate_regression_with_mut_impact/", 
+                              "regression_cptac2p_cptac3_tumor_reg_nonNA20_mut_impact_cancer_specificity_annotated.txt"),
+                        data.table = F)
+regression <- regression %>%
+  filter(pair_pro %in% omnipath_tab$pair_pro[!(omnipath_tab$Source %in% c("NetKIN", "PhosphoNetworks", "MIMP"))] | pair_pro %in% psp_tab$pair_pro)
+
+regression <- adjust_regression_by_nonNA(regression = regression, reg_nonNA = 20, reg_sig = reg_sig)
+regression <- annotate_ks_source(regression = regression)
+
+mut_impact_tab <- load_mut_impact_proteome()
+
+```
+
+
+
+``` {r input-druggable-genes}
+# drug_genes <- fread(input = "./Ding_Lab/Projects_Current/CPTAC/pan3can_shared_data/reference_files/gene_drug_list/Premed_raw_databases/drugBank/all_target_ids_all.txt.human.tsv_hugoified.tsv", data.table = F)
+
+drug_genes <- fread(input = "./Ding_Lab/Projects_Current/CPTAC/pan3can_shared_data/reference_files/gene_drug_list/Premed_raw_databases/drugBank/drug_list.txt", data.table = F, col.names = "gene")
+
+drug_genes <- read.delim(file = "./Ding_Lab/Projects_Current/CPTAC/pan3can_shared_data/reference_files/gene_drug_list/Premed_raw_databases/drugBank/drug_list.txt", header = F, col.names = "gene")
+drug_genes <- as.vector(drug_genes$gene)
+drug_genes %>%
+  head()
+drug_genes %>%
+  length()
+
+"MAPK1" %in% drug_genes
+"MAP2K1" %in% drug_genes
+"BRAF" %in% drug_genes
+"MTOR"
+```
+
+``` {r input-outlier-tab}
+outlier_sd <- 1.5
+esscore_tab_outlier_drug <- NULL
+for (cancer in cancers2process) {
+  esscore_tab <- fread(input = paste0("./cptac2p/analysis_results/phospho_network/es_score/table/calculate_es_pair_score/kinase/esscore_tab_", cancer, "_kinase_reg_nonNA20.txt"), data.table = F)
+  partIDs <- colnames(esscore_tab); partIDs <- partIDs[!(partIDs %in% c("GENE", "SUB_GENE", "SUB_MOD_RSD", "SELF", "pair", "site_id"))]
+  
+  ## screen druggable genes for RNA
+  ## BRCA, OV, CO: RPKM
+  ## UCEC: RSEM
+  ## CCRCC: RPKM
+   
+  esscore_tab <- esscore_tab[esscore_tab$GENE %in% drug_genes, ]
+  esscore_tab <- esscore_tab %>%
+    mutate(pair_cancer = paste0(pair, ":", cancer)) %>%
+    filter(pair_cancer %in% regression$pair_cancer[regression$regulated])
+  
+  pairs2generate_head <- esscore_tab[, c("GENE", "SUB_GENE", "SUB_MOD_RSD", "SELF", "pair")]
+  pairs2generate_head <- annotate_ks_source(regression = pairs2generate_head)
+  pairs2generate_head <- pairs2generate_head[!duplicated(pairs2generate_head$pair),]
+  pairs2generate_head %>%
+    head()
+  esscore_tab_scaled <- esscore_tab[, partIDs]
+  esscore_tab_scaled <- scale_by_row(esscore_tab_scaled)
+  esscore_tab_outlier <- cbind(pairs2generate_head, (esscore_tab_scaled > outlier_sd))
+  colnames(esscore_tab_outlier) <- c(colnames(pairs2generate_head), partIDs)
+  
+  esscore_tab_outlier.m <- melt.data.frame(esscore_tab_outlier, 
+                                           id.vars = c("GENE", "SUB_GENE", "SUB_MOD_RSD", "SELF", "pair", "Source", "is.direct"))
+  esscore_tab_outlier.m %>%
+    head()
+  esscore_tab_outlier.m <- esscore_tab_outlier.m %>%
+    filter(!is.na(value) & value == T)# %>%
+  # filter((is.direct == T & SELF == "trans") | SELF == "cis")
+  esscore_tab_outlier.m$cancer <- cancer
+  esscore_tab_outlier.m %>%
+    head()
+  esscore_tab_outlier_drug <- rbind(esscore_tab_outlier_drug, esscore_tab_outlier.m)
+}
+```
+
+```{r number-of-druggable-genes}
+esscore_tab_outlier_drug %>%
+  nrow()
+
+esscore_tab_outlier_drug %>%
+  select(pair) %>%
+  unique() %>%
+  nrow()
+
+esscore_tab_outlier_drug %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+esscore_tab_outlier_drug %>%
+  select(GENE) %>%
+  unique()
+
+esscore_tab_outlier_drug %>%
+  select(GENE) %>%
+  filter(GENE %in% oncogenes) %>%
+  unique()
+
+```
+
+## overview
+
+``` {r screen-drug-gene-through-outlier-tab}
+table(esscore_tab_outlier_drug[, c("GENE", "cancer")])
+drug_genes2filter <- unique(esscore_tab_outlier_drug$GENE[esscore_tab_outlier_drug$GENE %in% unlist(SMGs) | esscore_tab_outlier_drug$SUB_GENE %in% unlist(SMGs)])
+drug_genes2filter
+table(esscore_tab_outlier_drug[esscore_tab_outlier_drug$GENE %in% drug_genes2filter, c("pair", "cancer")])
+"DYRK1A" %in% drug_genes
+"MAPK9" %in% drug_genes
+oncogenes <- c(oncogenes, "JAK1")
+
+esscore_tab_outlier_drug %>%
+  filter(GENE %in% oncogenes) %>%
+  select(variable, pair, cancer, GENE) %>%
+  arrange(variable)
+
+esscore_tab_outlier_drug %>%
+  filter(GENE %in% oncogenes) %>%
+  select(GENE, cancer, SELF) %>%
+  table
+
+esscore_tab_outlier_drug %>%
+  filter(GENE %in% oncogenes) %>%
+  select(GENE, variable, cancer) %>%
+  unique %>%
+  select(GENE, cancer) %>%
+  table
+
+esscore_tab_outlier_drug %>%
+  filter(GENE %in% oncogenes) %>%
+  select(GENE, variable, cancer, SELF) %>%
+  unique %>%
+  select(GENE, cancer, SELF) %>%
+  table
+
+esscore_tab_outlier_drug %>%
+  filter(GENE %in% "ERBB2") %>%
+  select(variable, pair, cancer, GENE) %>%
+  arrange(variable)
+
+
+esscore_tab_outlier_drug %>%
+  filter(GENE %in% "MTOR") %>%
+  select(variable, pair, cancer, GENE) %>%
+  arrange(variable)
+
+esscore_tab_outlier_drug %>%
+  filter(GENE %in% "MET") %>%
+  select(variable, pair, cancer, GENE) %>%
+  arrange(variable)
+```
+what's the most frequent druggable events in each cancer?
+what are the durggable events enriched in particular subtype?
+what are the durggable events enriched in particular mutated samples?
+inhibit oncogene
+
+``` {r input-fisher-tble}
+fisher_stat_cancers <- fread(input = paste0(ppnD,"es_score/table/calculate_es_pair_score/fisher_stat_tab_outlier1.5SD_all_cancers_kinase_reg_nonNA20.txt"), data.table = F)
+```
+
+``` {r MAPK1}
+gene_tmp <- "MAPK1"
+pairs_outlier <- unique(esscore_tab_outlier_drug$pair[esscore_tab_outlier_drug$GENE == gene_tmp])
+pairs_outlier
+fisher_stat_cancers %>%
+  filter(pair %in% pairs_outlier) %>%
+  filter(p.value < 0.05) %>%
+  filter(num_is.outlier_is.subtype > 4) %>%
+  select(pair, fdr, subtype, cancer, p.value, num_is.outlier_is.subtype) %>%
+  arrange(fdr)
+```
+
+``` {r AKT1}
+gene_tmp <- "AKT1"
+pairs_outlier <- unique(esscore_tab_outlier_drug$pair[esscore_tab_outlier_drug$GENE == gene_tmp])
+pairs_outlier %>% length()
+fisher_stat_cancers %>%
+  filter(pair %in% pairs_outlier) %>%
+  filter(p.value < 0.05) %>%
+  filter(num_is.outlier_is.subtype > 4) %>%
+  select(pair, fdr, subtype, cancer, p.value, num_is.outlier_is.subtype) %>%
+  arrange(fdr)
+
+```
+
+``` {r BRAF}
+gene_tmp <- "BRAF"
+pairs_outlier <- unique(esscore_tab_outlier_drug$pair[esscore_tab_outlier_drug$GENE == gene_tmp])
+pairs_outlier %>% length()
+fisher_stat_cancers %>%
+  filter(pair %in% pairs_outlier) %>%
+  filter(p.value < 0.05) %>%
+  filter(num_is.outlier_is.subtype > 4) %>%
+  select(pair, fdr, subtype, cancer, p.value, num_is.outlier_is.subtype) %>%
+  arrange(fdr)
+
+regression %>%
+  filter(Cancer == "CO" & GENE == "BRAF" & regulated == T)
+
+regression %>%
+  filter(Cancer == "CO" & GENE == "BRAF")
+```
+
+``` {r MTOR}
+gene_tmp <- "MTOR"
+pairs_outlier <- unique(esscore_tab_outlier_drug$pair[esscore_tab_outlier_drug$GENE == gene_tmp])
+pairs_outlier %>% length()
+pairs_outlier
+fisher_stat_cancers %>%
+  filter(pair %in% pairs_outlier) %>%
+  filter(p.value < 0.05) %>%
+  filter(num_is.outlier_is.subtype > 4) %>%
+  select(pair, fdr, subtype, cancer, p.value, num_is.outlier_is.subtype) %>%
+  arrange(fdr)
+```

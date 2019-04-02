@@ -97,7 +97,9 @@ for (cancer in "UCEC") {
   # mut_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_mutation_matrix_UCEC/", cancer, "_somatic_mutation_in_enzyme_substrate.txt"), data.table = F)
   mut_mat <- fread(input = paste0(ppnD, "genoalt/tables/generate_somatic_mutation_matrix_for_signor_complex_UCEC/", cancer, "_somatic_mutation_in_complex.txt"), data.table = F)
   
-  mut_cnv_tab <- mut_cnv_cans[mut_cnv_cans$p < 0.3,]
+  mut_cnv_cans <- load_mut_impact_proteome()
+  mut_cnv_tab <- mut_cnv_cans[mut_cnv_cans$p < 0.05 & mut_cnv_cans$cancer == cancer,]
+  
   # mut_cnv_tab <- mut_cnv_cans
   # tab_mut <- mut_cnv_tab[mut_cnv_tab$SUB_GENE %in% c("BAD", "GSK3B", "PIK3R1", "CTNNB1", "MAP2K1", "MAPK1", "AKT1", "APC") & mut_cnv_tab$GENE %in% c("AKT1", "PIK3CA", "APC", "MAP3K1", "CTNNB1"),]
   
@@ -105,7 +107,9 @@ for (cancer in "UCEC") {
     # tab_mut <- mut_cnv_tab[mut_cnv_tab$geneA %in% c("CTNNB1") & mut_cnv_tab$geneB %in% c("APC"),]
     # tab_mut <- mut_cnv_tab[mut_cnv_tab$SUB_GENE %in% c("TP53BP1") & mut_cnv_tab$GENE %in% c("TP53") & mut_cnv_tab$SELF == self,]
     # tab_mut <- mut_cnv_tab[mut_cnv_tab$geneB %in% c("TP53BP1") & mut_cnv_tab$geneA %in% c("TP53"),]
-    tab_mut <- mut_cnv_tab[(mut_cnv_tab$geneA == "TP53" & mut_cnv_tab$geneB == "TP53BP1" & mut_cnv_tab$SUB_MOD_RSD == "S1763") | (mut_cnv_tab$geneA == "CTNNB1" & mut_cnv_tab$geneB == "APC" & mut_cnv_tab$SUB_MOD_RSD == "S2106") | (mut_cnv_tab$geneA == "CTNNB1" & mut_cnv_tab$geneB == "APC" & mut_cnv_tab$SUB_MOD_RSD == "S2278"),]
+    # tab_mut <- mut_cnv_tab[(mut_cnv_tab$geneA == "TP53" & mut_cnv_tab$geneB == "TP53BP1" & mut_cnv_tab$SUB_MOD_RSD == "S1763") | (mut_cnv_tab$geneA == "CTNNB1" & mut_cnv_tab$geneB == "APC" & mut_cnv_tab$SUB_MOD_RSD == "S2106") | (mut_cnv_tab$geneA == "CTNNB1" & mut_cnv_tab$geneB == "APC" & mut_cnv_tab$SUB_MOD_RSD == "S2278"),]
+    tab_mut <- mut_cnv_tab[mut_cnv_tab$GENE == "CTNNB1" & mut_cnv_tab$SUB_GENE == "AXIN1" & mut_cnv_tab$SUB_MOD_RSD %in% c("S77", "S493"),]
+    # tab_mut <- mut_cnv_tab[mut_cnv_tab$GENE == "CTNNB1" & mut_cnv_tab$SUB_GENE == "APC",]
     
     ## input protein and phosphorylation data
     # pro_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/UCEC_V1/UCEC_proteomics_V1.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
@@ -115,7 +119,6 @@ for (cancer in "UCEC") {
     pro_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/Baylor_DataFreeze_V2/UCEC_proteomics_PNNL_ratio_median_polishing_log2_V2.0.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
     pho_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/Baylor_DataFreeze_V2/UCEC_phosphoproteomics_PNNL_ratio_median_polishing_site_level_log2_V2.0.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
     phog_data <- read_delim("Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/Baylor_DataFreeze_V2/UCEC_phosphoproteomics_PNNL_ratio_median_polishing_gene_level_log2_V2.0.cct", "\t", escape_double = FALSE, trim_ws = TRUE)
-    
     pro_data <- data.frame(pro_data)
     colnames(pro_data)[1] <- "Gene"
     pho_data <- data.frame(pho_data)
@@ -152,13 +155,13 @@ for (cancer in "UCEC") {
       print(paste0(cancer, "no data!"))
     } else {
       for (i in 1:nrow(tab_mut)) {
-        # enzyme <- as.character(tab_mut[i, "GENE"])
-        # substrate <- as.character(tab_mut[i, "SUB_GENE"])
-        # rsd <- as.character(tab_mut[i, "SUB_MOD_RSD"])
-        
-        enzyme <- as.character(tab_mut[i, "geneA"])
-        substrate <- as.character(tab_mut[i, "geneB"])
+        enzyme <- as.character(tab_mut[i, "GENE"])
+        substrate <- as.character(tab_mut[i, "SUB_GENE"])
         rsd <- as.character(tab_mut[i, "SUB_MOD_RSD"])
+        
+        # enzyme <- as.character(tab_mut[i, "geneA"])
+        # substrate <- as.character(tab_mut[i, "geneB"])
+        # rsd <- as.character(tab_mut[i, "SUB_MOD_RSD"])
         
         subdir3 <- paste0(subdir2, enzyme, "/")
         dir.create(subdir3)

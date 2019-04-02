@@ -87,7 +87,7 @@ SMGs[["UCEC"]] <- c("FLNA",
   "ARID1A",
   "PIK3CA",
   "PTEN")
-SMGs[["CCRCC"]] <- c("VHL", "PBRM1", "SETD2", "KDM5C", "PTEN", "BAP1", "MTPR", "TP53")
+SMGs[["CCRCC"]] <- c("VHL", "PBRM1", "SETD2", "KDM5C", "PTEN", "BAP1", "MTOR", "TP53")
 SMGs[["LIHC"]] <- c("TP53", "AXIN1", "RB1", "CTNNB1", "ARID1A", "ARID2", "BAP1", "NFE2L2", "KEAP1", "ALB", "APOB")
 
 ## significant SCNA
@@ -194,6 +194,8 @@ partID2UCECsubtype = function(patientID_vector) {
 #   return(file)
 # }
 
+
+# load data functions -----------------------------------------------------
 loadSampMap <- function() {
   file <- fread(input = paste0(cptac_sharedD, "Specimen_Data_20161005_Yige_20180815.txt"), data.table = F, sep = "\t")
   return(file)
@@ -215,12 +217,100 @@ loadMaf <- function(cancer, maf_files) {
   return(maf)
 }
 
+
+# Load cBioPortal data ----------------------------------------------------
+cBioPortalD <- "./Ding_Lab/Projects_Current/cBioPortal/"
+loadTCGAMaf <- function(cancer) {
+  files_tmp <- list.files(path = paste0(cBioPortalD, cancer, "/"), recursive = T)
+  files_tmp <- files_tmp[grepl(x = files_tmp, pattern = "data_mutations_extended.txt") & grepl(x = files_tmp, pattern = "tcga", ignore.case = T)]
+  files_tmp
+  if (length(files_tmp) > 1) {
+    stop("multiple maf files!")
+  }
+  if (cancer != "UCEC") {
+    maf <- read_delim(file = paste0(cBioPortalD,  cancer, "/", files_tmp), 
+                      "\t", escape_double = FALSE, trim_ws = TRUE, col_names = T)
+  } else {
+    maf <- read_delim(file = paste0(cBioPortalD,  cancer, "/", files_tmp), 
+                      "\t", escape_double = FALSE, trim_ws = TRUE, col_names = T, skip = 1)
+  }
+
+  maf <- data.frame(maf)
+  print(paste0("MAF has ", nrow(maf), " lines\n"))
+  return(maf)
+}
+
+loadTCGACNA <- function(cancer) {
+  files_tmp <- list.files(path = paste0(cBioPortalD, cancer, "/"), recursive = T)
+  files_tmp <- files_tmp[grepl(x = files_tmp, pattern = "data_CNA") & grepl(x = files_tmp, pattern = "tcga", ignore.case = T) & !grepl(x = files_tmp, pattern = "microRNA", ignore.case = T) ]
+  if (length(files_tmp) > 1) {
+    stop("multiple CNA files!")
+  }
+  
+  data_CNA <- read_delim(file = paste0(cBioPortalD,  cancer, "/", files_tmp), 
+                    "\t", escape_double = FALSE, trim_ws = TRUE)
+  colnames(data_CNA)
+  partIDs <- colnames(data_CNA)[!(colnames(data_CNA) %in% c("Hugo_Symbol", "Entrez_Gene_Id"))]
+  
+  data_CNA_mat <- as.matrix(data_CNA[, colnames(data_CNA)[!(colnames(data_CNA) %in% c("Hugo_Symbol", "Entrez_Gene_Id"))]])
+  cna_status_mat <- matrix(data = "neutral", nrow = nrow(data_CNA_mat), ncol = ncol(data_CNA_mat))
+  cna_status_mat[which(data_CNA_mat <= -1, arr.ind = T)] <- "deletion"
+  cna_status_mat[which(data_CNA_mat >= 1, arr.ind = T)] <- "amplification"
+  cna_status_df <- data.frame(gene = data_CNA$Hugo_Symbol)
+  cna_status_df <- cbind(cna_status_df, data.frame(cna_status_mat))
+  colnames(cna_status_df) <- c("gene", colnames(data_CNA)[!(colnames(data_CNA) %in% c("Hugo_Symbol", "Entrez_Gene_Id"))])
+  print("WARNING: CNA file might have multiple entries for one gene!")
+  return(cna_status_df)
+}
+
+loadTCGARNA <- function(cancer) {
+  files_tmp <- list.files(path = paste0(cBioPortalD, cancer, "/"), recursive = T)
+  files_tmp
+  files_tmp <- files_tmp[grepl(x = files_tmp, pattern = "median_Zscores") & grepl(x = files_tmp, pattern = "mRNA") & !grepl(x = files_tmp, pattern = "meta") & grepl(x = files_tmp, pattern = "tcga", ignore.case = T)]
+  files_tmp
+  if (length(files_tmp) > 1) {
+    files_tmp <- files_tmp[grepl(x = files_tmp, pattern = "v2")]
+  }
+  if (length(files_tmp) > 1) {
+    stop("multiple RNA files!")
+  }
+  if (length(files_tmp) == 0) {
+    files_tmp <- list.files(path = paste0(cBioPortalD, cancer, "/"), recursive = T)
+    
+    files_tmp <- files_tmp[grepl(x = files_tmp, pattern = "median_Zscores") & grepl(x = files_tmp, pattern = "data_RNA") & grepl(x = files_tmp, pattern = "tcga", ignore.case = T)]
+    
+  }
+  if (cancer == "OV") {
+    files_tmp <- list.files(path = paste0(cBioPortalD, cancer, "/"), recursive = T)
+    
+    files_tmp <- files_tmp[grepl(x = files_tmp, pattern = "median_Zscores") & grepl(x = files_tmp, pattern = "expression") & !grepl(x = files_tmp, pattern = "meta") & grepl(x = files_tmp, pattern = "tcga", ignore.case = T)]
+  }
+  files_tmp
+  data_RNA <- read_delim(file = paste0(cBioPortalD,  cancer, "/", files_tmp), 
+                         "\t", escape_double = FALSE, trim_ws = TRUE)
+  colnames(data_RNA)
+  head(data_RNA)
+  partIDs <- colnames(data_RNA)[!(colnames(data_RNA) %in% c("Hugo_Symbol", "Entrez_Gene_Id"))]
+  RNA_status_df <- data.frame(gene = data_RNA$Hugo_Symbol)
+  RNA_status_df <- cbind(RNA_status_df, data_RNA[, partIDs])
+  colnames(RNA_status_df) <- c("gene", partIDs)
+  print("WARNING: RNA file might have multiple entries for one gene!")
+  head(RNA_status_df)
+  return(RNA_status_df)
+}
+
+loadTCGARPPA <- function(cancer, expression_type) {
+  file_tmp <- paste0("./cptac2p/analysis_results/preprocess_files/tables/parse_TCGA_data/", cancer, "_", expression_type, "_tumor_TCGA_RPPA_partID.txt")
+  tab_tmp <- read_delim(file = file_tmp, 
+                         "\t", escape_double = FALSE, trim_ws = TRUE)
+  return(tab_tmp)
+}
+
 # generate mutation matrix ------------------------------------------------
-generate_somatic_mutation_matrix <- function(pair_tab, cancer) {
+generate_somatic_mutation_matrix <- function(pair_tab, maf) {
   genes4mat <- unique(unlist(pair_tab))
   length(genes4mat)
   
-  maf <- loadMaf(cancer = cancer, maf_files = maf_files)
   maf <- maf[maf$Hugo_Symbol %in% genes4mat,]
   nrow(maf)
   maf$sampID <- str_split_fixed(string = maf$Tumor_Sample_Barcode, pattern = "_", 2)[,1]
@@ -399,6 +489,17 @@ loadGeneList = function(gene_type, cancer, is.soft.limit) {
 
 
 # ordering ----------------------------------------------------------------
+order_exp_type <- function(x) {
+  y <- factor(x, levels = c("RNA", "PRO", "PHO"))
+  return(y)
+}
+
+order_variant_class <- function(x) {
+  y <- factor(x, levels = c("missense", "truncation", "not_silent"))
+  return(y)
+}
+
+
 order_cancer <- function(x) {
   y <- factor(x, levels = c("BRCA", "OV", "CO", "UCEC", "CCRCC", "LIHC"))
   return(y)
@@ -417,6 +518,26 @@ order_pathway <- function(x) {
 }
 
 # take top ----------------------------------------------------------------
+get_top_QT_by_id <- function(value_vector, id_vector, qt) {
+  values2keep <- vector(mode = "logical", length = length(id_vector))
+  for (id in unique(id_vector)) {
+    values2extract <- value_vector[id_vector == id]
+    qt_bottom <- quantile(x = values2extract, probs = qt, na.rm = T)
+    values2keep[value_vector > qt_bottom & id_vector == id] <- T
+  }
+  return(values2keep)
+}
+
+get_bottom_QT_by_id <- function(value_vector, id_vector, qt) {
+  values2keep <- vector(mode = "logical", length = length(id_vector))
+  for (id in unique(id_vector)) {
+    values2extract <- value_vector[id_vector == id]
+    qt_bottom <- quantile(x = values2extract, probs = qt, na.rm = T)
+    values2keep[value_vector < qt_bottom & id_vector == id] <- T
+  }
+  return(values2keep)
+}
+
 get_top_by_id <- function(value_vector, id_vector, num_top) {
   values2keep <- vector(mode = "logical", length = length(id_vector))
   for (id in unique(id_vector)) {
@@ -444,6 +565,14 @@ get_SMG_by_cancer <- function(gene_vector, cancer_vector) {
   return(is.smg)
 }
 
+get_CNA_genes_by_cancer <- function(gene_vector, cancer_vector) {
+  is.smg <- vector("logical", length = length(gene_vector))
+  for (cancer in unique(cancer_vector)) {
+    is.smg[cancer_vector ==  cancer] <- (gene_vector[cancer_vector ==  cancer] %in% SMGs[[cancer]])
+  }
+  return(is.smg)
+}
+
 # number manipulation -----------------------------------------------------
 remove_outliers_IQR <- function(x, out_thres, na.rm = TRUE, ...) {
   qnt <- quantile(x, probs=c(.25, .75), na.rm = na.rm, ...)
@@ -461,6 +590,34 @@ remove_outliers_cap <- function(x, cap, na.rm = TRUE, ...) {
   y
 }
 
+add_cap <- function(x, cap) {
+  y <- x
+  y[!is.na(x) & x < (-cap)] <- (-cap)
+  y[!is.na(x) & x > (cap)] <- cap
+  y
+}
+
 range01 <- function(x, ...){(x - min(x, ...)) / (max(x, ...) - min(x, ...))}
 
-
+FDR_by_id_columns <- function(p_vector, id_columns, df) {
+  ## make a replicate the id columns and make it charactors
+  df_id <- matrix(data = as.character(unlist(df[, id_columns])), nrow = nrow(df), ncol = length(id_columns), byrow = F)
+  df_id <- data.frame(df_id); colnames(df_id) <- id_columns
+  df_id_combo <- data.frame(table(df_id))
+  df_id_combo <- df_id_combo[df_id_combo$Freq > 0,]
+  ## give a number for each combo
+  df_id_combo$combo_id <- 1:nrow(df_id_combo)
+  df_id_combo
+  df_id <- merge(df_id, df_id_combo[, c(id_columns, "combo_id")], all.x = T)
+  if (any(is.na(df_id$combo_id))) {
+    stop()
+  }
+  
+  ## for every combo of values in id columns, adjust a set of pvalues
+  fdr_vector <- vector(mode = "numeric", length = length(p_vector)) + NA
+  for (i in 1:length(unique(df_id$combo_id))) {
+    row2adjust <- (df_id$combo_id == i & !is.na(p_vector))
+    fdr_vector[row2adjust] <- p.adjust(p = p_vector[row2adjust], method = "fdr")
+  }
+  return(fdr_vector)
+}

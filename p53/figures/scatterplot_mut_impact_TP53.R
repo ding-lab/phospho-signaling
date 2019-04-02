@@ -30,9 +30,9 @@ hotspot_proximal <- as.vector(sapply(hotspot, function(i) i+(-5):5))
 
 # decide what to plot -----------------------------------------------------
 # pairs2plot <- paste0("TP53", ":", "ESR1", ":", "PRO")
-# pairs2plot <- paste0("TP53", ":", "ESR1", ":", "RNA")
+pairs2plot <- paste0("TP53", ":", "ESR1", ":", "RNA")
 # pairs2plot <- paste0("TP53", ":", "TP53", ":", "RNA")
-pairs2plot <- paste0("TP53", ":", "TP53", ":", "PRO")
+# pairs2plot <- paste0("TP53", ":", "TP53", ":", "PRO")
 # pairs2plot <- paste0("TP53", ":", "CDKN1A", ":", "RNA")
 # pairs2plot <- paste0("TP53", ":", "CDKN1A", ":", "PRO")
 # pairs2plot <- paste0("TP53", ":", "MDM2", ":", "RNA")
@@ -59,8 +59,12 @@ for (pair in pairs2plot) {
       maf <- maf[maf$Hugo_Symbol == geneA,]
       
       ## input CNA matrix
-      cna_tab <- loadCNAstatus(cancer = cancer)
-      cna_tab <- cna_tab[cna_tab$gene %in% c(geneA, geneB), ]
+      if (geneA == "TP53") {
+        cna_tab <- loadTP53Deletion(cancer = cancer)
+      } else {
+        cna_tab <- loadCNAstatus(cancer = cancer)
+      }
+      cna_tab <- cna_tab[cna_tab$gene %in% c(geneA), ]
       
       ## load RNA
       rna_tab <- loadRNA(cancer = cancer)

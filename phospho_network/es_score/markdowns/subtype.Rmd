@@ -42,8 +42,24 @@ fisher_stat_cancers2write <- fisher_stat_cancers2write %>%
 subtype = "Basal"
 
 fisher_stat_cancers2write %>%
-  filter(subtype == "Basal", GENE == "CDK1", fdr < 0.1) %>%
+  filter(subtype == "Basal", fdr < 0.05) %>%
   nrow()
+
+pairs_subtype <- fisher_stat_cancers2write %>%
+  filter(subtype == "Basal", fdr < 0.05) %>%
+  select(pair)
+
+regression %>%
+  filter(pair %in% pairs_subtype$pair) %>%
+  filter(!is.na(Source)) %>%
+  filter(Cancer == "BRCA") %>%
+  filter(regulated == T) %>%
+  select(pair, FDR_pho_kin, FDR_pro_kin, coef_pho_kin, coef_pro_kin, Source, regulated_uniq) %>%
+  unique
+
+```
+
+``` {r basal-statistical-significant-CDK1}
 
 fisher_stat_cancers2write %>%
   filter(subtype == "Basal", GENE == "CDK1", fdr < 0.05) %>%
@@ -82,9 +98,15 @@ fisher_stat_cancers %>%
 ## SRC: not clear
 
 fisher_stat_cancers2write %>%
-  filter(subtype == "Basal", fdr < 0.1, GENE != "CDK1")
+  filter(subtype == "Basal", fdr < 0.05, GENE != "CDK1")
 ## cis:TTK, MASTL, VRK1, SRPK1
 
+fisher_stat_cancers2write %>%
+  filter(subtype == "Basal", fdr < 0.05, GENE != "CDK1", SUB_GENE == "TP53")
+
+
+fisher_stat_cancers2write %>%
+  filter(subtype == "Basal", fdr < 0.05, GENE != "CDK1", SUB_GENE != "TP53")
 ## trans: PRKCB:STMN1:S38, MAPK1:SOX10:S24, TTK:BUB1B:S543
 ```
 
@@ -116,6 +138,17 @@ fisher_stat_cancers %>%
 ## ATR:MCM2:S108: good
 ```
 
+``` {r Her2-statistical-significant}
+subtype2test <- "Her2"
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.05) %>%
+  nrow()
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.05)
+
+```
 
 ``` {r LumB-statistical-significant}
 subtype2test <- "LumB"
@@ -127,7 +160,7 @@ fisher_stat_cancers2write %>%
 
 fisher_stat_cancers2write %>%
   filter(subtype == subtype2test, fdr < 0.1)
-## 3 events passed FDR < 0.1
+## 2 events passed FDR < 0.1
 
 fisher_stat_cancers2write %>%
   filter(subtype == subtype2test, fdr < 0.1) %>%
@@ -161,6 +194,10 @@ fisher_stat_cancers2write %>%
   filter(subtype == subtype2test & num_is.outlier_is.subtype >= 4) %>%
   nrow
 ## 11 events passed FDR < 0.1
+
+fisher_stat_cancers2write %>%
+  filter(subtype == subtype2test, fdr < 0.1)
+
 
 fisher_stat_cancers2write %>%
   filter(subtype == subtype2test) %>%
@@ -275,6 +312,10 @@ fisher_stat_cancers %>%
 
 ``` {r Endometroid-statistical-significant}
 subtype2test <- "Endometrioid"
+
+fisher_stat_cancers %>%
+  filter(subtype == subtype2test, fdr < 0.05, num_is.outlier_is.subtype >= 4 ) %>%
+  arrange(-num_is.outlier_is.subtype)
 
 fisher_stat_cancers %>%
   filter(subtype == subtype2test, p.value < 0.05, num_is.outlier_is.subtype >= 4 ) %>%

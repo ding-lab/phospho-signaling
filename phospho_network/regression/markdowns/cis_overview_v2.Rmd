@@ -1,0 +1,352 @@
+---
+title: "cis_section_1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+library(knitr)
+opts_knit$set(root.dir = baseD)
+setwd(baseD)
+source('./cptac2p_analysis/preprocess_files/preprocess_files_shared.R')
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+```
+
+
+``` {r input-ks-table}
+omnipath_tab <- load_omnipath()
+omnipath_tab <- annotate_enzyme_type(regression = omnipath_tab, kinases = kinases, phosphatases = phosphatases)
+omnipath_tab$pair <- paste0(omnipath_tab$pair_pro, ":", omnipath_tab$SUB_MOD_RSD)
+omnipath_tab$SELF <- ifelse(as.vector(omnipath_tab$GENE) == as.vector(omnipath_tab$SUB_GENE), "cis", "trans")
+omnipath_tab$rsd <- paste0(omnipath_tab$SUB_GENE, "_", omnipath_tab$SUB_MOD_RSD)
+# k_s_table <- omnipath_tab[omnipath_tab$enzyme_type == enzyme_type,]
+
+psp_tab <- load_psp()
+psp_tab$SELF <- ifelse(as.vector(psp_tab$GENE) == as.vector(psp_tab$SUB_GENE), "cis", "trans")
+```
+
+```{r get-regulatory-sites}
+regulatory_sites <- fread(input = "./Ding_Lab/Projects_Current/CPTAC/pan3can_shared_data/Phospho_databases/PhosphositePlus/Mar_04_2019/Regulatory_sites", data.table = F)
+regulatory_sites <- regulatory_sites %>%
+  mutate(SUB_MOD_RSD = str_split_fixed(string = MOD_RSD, pattern = "-", n = 2)[,1])
+regulatory_sites2merge <- regulatory_sites %>%
+  select(GENE, SUB_MOD_RSD, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT) %>%
+  unique
+```
+
+```{r input-regression-and-clean-up}
+regression <- fread(input = paste0(ppnD, "regression/tables/annotate_regression_with_mut_impact/", 
+                                   "regression_cptac2p_cptac3_tumor_reg_nonNA20_mut_impact_cancer_specificity_annotated.txt"),
+                    data.table = F)
+reg_sig <- c(0.05, 0.05); names(reg_sig) <- c("kinase", "phosphatase")
+regression %>% nrow()
+regression <- regression %>%
+  filter(pair_pro %in% omnipath_tab$pair_pro[!(omnipath_tab$Source %in% c("NetKIN", "PhosphoNetworks", "MIMP"))] | pair_pro %in% psp_tab$pair_pro)
+regression %>% nrow()
+
+# regression <- change_regression_nonNA(regression = regression, reg_nonNA = 20, reg_sig = reg_sig)
+regression <- adjust_regression_by_nonNA(regression = regression, reg_nonNA = 20, reg_sig = reg_sig)
+regression <- annotate_ks_source(regression = regression)
+table(regression$Cancer)
+
+regression <- merge(regression, regulatory_sites2merge, by.x = c("SUBSTRATE", "SUB_MOD_RSD"), by.y = c("GENE", "SUB_MOD_RSD"), all.x = T)
+```
+
+``` {r get-sites}
+cis_detected_sites <- unique(regression$rsd[regression$SELF == "cis"])
+cis_detected_sites %>% length()
+
+cis_regulated_sites <- unique(regression$rsd[regression$SELF == "cis" & regression$fdr_sig & regression$coef_sig])
+cis_regulated_sites %>% length()
+
+trans_detected_sites <- unique(regression$rsd[regression$SELF == "trans"])
+trans_detected_sites %>% length()
+
+trans_regulated_sites <- unique(regression$rsd[regression$SELF == "trans" & regression$fdr_sig & regression$coef_sig])
+trans_regulated_sites %>% length()
+```
+
+```{r negative-correlated}
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(is.direct == T) %>%
+  select(pair) %>%
+  unique() %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(is.direct == T) %>%
+  select(KINASE) %>%
+  unique() %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin > 0) %>%
+  filter(is.direct == T) %>%
+  select(pair) %>%
+  unique() %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin > 0) %>%
+  filter(is.direct == T) %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin < 0) %>%
+  filter(is.direct == T) %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == F) %>%
+  filter(coef_pro_kin > 0) %>%
+  filter(is.direct == T) %>%
+  select(pair) %>%
+  unique() %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin < 0) %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin < 0) %>%
+  select(pair) %>%
+  unique() %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin < 0)
+```
+
+## autophosphorylation
+
+```{r ERBB2}
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin > 0) %>%
+  filter(KINASE == "ERBB2") %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT))
+```
+
+
+
+```{r cis-with-functional-annotation}
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin > 0) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(pair) %>%
+  unique() %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin > 0) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  filter(grepl(pattern = "inhibited", x = ON_FUNCTION))
+
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin > 0) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  filter(grepl(pattern = "inhibited", x = ON_FUNCTION)) %>%
+  select(pair) %>%
+  unique() %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin > 0) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  filter(grepl(pattern = "induced", x = ON_FUNCTION)) %>%
+  select(pair) %>%
+  unique() %>%
+  nrow()
+
+inhibited_kinases <- regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin > 0) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  filter(grepl(pattern = "inhibited", x = ON_FUNCTION)) %>%
+  select(pair_pro_cancer) %>%
+  unique()
+
+induced_kinases <- regression %>%
+  filter(SELF == "cis") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(coef_pro_kin > 0) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  filter(grepl(pattern = "induced", x = ON_FUNCTION)) %>%
+  select(pair_pro_cancer) %>%
+  unique()
+
+intersect(inhibited_kinases, induced_kinases)
+mixed_effect_kinases
+
+
+```
+
+```{r known_autophosphorylating_kinases}
+
+kinase_cis <- unique(c(as.vector(k_s_table$GENE[as.vector(k_s_table$GENE) == as.vector(k_s_table$SUB_GENE)]), 
+                       as.vector(psp_tab$GENE[as.vector(psp_tab$GENE)==as.vector(psp_tab$SUB_GENE)])))
+
+kinase_cis %>% length()
+```
+
+```{r known_autophosphorylating_sites}
+psp_tab$rsd <- paste0(psp_tab$SUB_GENE, "_", psp_tab$SUB_MOD_RSD)
+knownauto_rsd_list <- unique(psp_tab$rsd[psp_tab$SELF == "cis"])
+knownauto_rsd_list %>% length()
+```
+
+## get activation loop reported to be autophosphorylated
+```{r reformat_AL_table}
+# ## Load UniProt annotation
+# uniprot_tbl <- read_tsv(
+#     '../../../../Ding_Lab/Projects_Current/Multiple_Myeloma/MMY_Proteomics/Resources/all_uniprot_canonical_isoform_mappings.uniprotkb_201801.tsv.gz',
+#     col_types = cols(
+#         uniprot_entry = col_character(),
+#         uniprot_name = col_character(),
+#         uniprot_isoform = col_character(),
+#         hugogene_id = col_integer(),
+#         symbol = col_character()
+#     )
+# )
+# uniprot_tbl %>% head()
+# uniprot_tbl <- data.frame(uniprot_tbl)
+# uniprot_tbl$uniprot_prefix <- str_split_fixed(string = uniprot_tbl$uniprot_name, pattern = "\\_", 2)[,1]
+# uniprot_tbl %>% head()
+# ## change the protein names in the above table with gene symbol
+# AL_tab$symbol <- sapply(X = as.vector(AL_tab$Kinase), FUN = function(k, uniprot_tbl) {
+#   unique(uniprot_tbl$symbol[uniprot_tbl$uniprot_prefix == k])}, uniprot_tbl = uniprot_tbl)
+# AL_tab %>% head()
+
+## load AL phosphosite table
+AL_tab <- read_excel("~/Box Sync/cptac2p/resources/autophosphorylation/AL_autophosphorylation.xlsx")
+
+## get the known autophosphorylated AL sites
+AL_tab_wsite <- AL_tab[AL_tab$` Putative activation loop phosphorylation site(s)` != "?",]
+AL_tab_wsite %>% head()
+
+AL_rsd_list <- sapply(1:nrow(AL_tab_wsite), function(i, AL_tab_wsite) {
+  kinase <- as.character(AL_tab_wsite$Kinase[i])
+  rsds <- unlist(strsplit(x = AL_tab_wsite$` Putative activation loop phosphorylation site(s)`[i], split = "\\, "))
+  k_rsds <- paste0(kinase, "_", rsds)
+  return(k_rsds)
+}, AL_tab_wsite = AL_tab_wsite)
+AL_rsd_list <- unlist(AL_rsd_list)
+unlist(AL_rsd_list) %>% head()
+unlist(AL_rsd_list) %>% length()
+
+## get the known autophosphorylated-only AL sites
+AL_tab_wsite_autoonly <- AL_tab[AL_tab$` Putative activation loop phosphorylation site(s)` != "?" & AL_tab$`Activation loop phosphorylation showed to be required for activity` == "+" & AL_tab$`Is the site known to be phosphorylated by other kinases?` == "No",]
+AL_tab_wsite_autoonly %>% head()
+AL_tab_wsite_autoonly %>% nrow()
+
+AL_autoonly_rsd_list <- sapply(1:nrow(AL_tab_wsite_autoonly), function(i, AL_tab_wsite_autoonly) {
+  kinase <- as.character(AL_tab_wsite_autoonly$Kinase[i])
+  rsds <- unlist(strsplit(x = AL_tab_wsite_autoonly$` Putative activation loop phosphorylation site(s)`[i], split = "\\, "))
+  k_rsds <- paste0(kinase, "_", rsds)
+  return(k_rsds)
+}, AL_tab_wsite_autoonly = AL_tab_wsite_autoonly)
+AL_autoonly_rsd_list <- unlist(AL_autoonly_rsd_list)
+AL_autoonly_rsd_list %>% length()
+```
+``` {r cis-regulated-auto-sites}
+intersect(cis_detected_sites, knownauto_rsd_list) %>% length()
+intersect(cis_regulated_sites, knownauto_rsd_list) %>% length()
+```
+
+``` {r cis-regulated-AL-sites}
+intersect(cis_detected_sites, unlist(AL_rsd_list))
+intersect(cis_detected_sites, unlist(AL_rsd_list)) %>% length()
+
+intersect(cis_regulated_sites, unlist(AL_rsd_list))
+intersect(cis_regulated_sites, unlist(AL_rsd_list)) %>% length()
+
+regression[regression$rsd %in% intersect(cis_regulated_sites, unlist(AL_rsd_list)) & regression$SELF == "cis",] %>%
+  select(pair, regulated, Cancer)
+```
+
+``` {r not-cis-regulated-auto-sites}
+setdiff(intersect(cis_detected_sites, knownauto_rsd_list), cis_regulated_sites)
+
+intersect(setdiff(intersect(cis_detected_sites, knownauto_rsd_list), cis_regulated_sites), trans_detected_sites) %>% length()
+intersect(setdiff(intersect(cis_detected_sites, knownauto_rsd_list), cis_regulated_sites), trans_regulated_sites)
+AL_rsd_notcis_trans_list <- intersect(intersect(setdiff(intersect(cis_detected_sites, knownauto_rsd_list), cis_regulated_sites), trans_regulated_sites), unlist(AL_rsd_list))
+AL_rsd_notcis_trans_list
+regression[regression$rsd %in% AL_rsd_notcis_trans_list & regression$regulated,] %>%
+  select(pair, regulated, Cancer)
+
+```
+
+``` {r auto-only-AL-sites}
+AK_autoonly_gene_list <- unique(str_split_fixed(string = AL_autoonly_rsd_list, pattern = "_", n = 2)[,1])
+str_split_fixed(string = AL_autoonly_rsd_list, pattern = "_", n = 2)[,1] %>% unique %>% length()
+setdiff(unique(str_split_fixed(string = AL_autoonly_rsd_list, pattern = "_", n = 2)[,1]), k_s_table$SUB_GENE[k_s_table$SELF == "trans"])
+setdiff(unlist(str_split_fixed(string = AL_autoonly_rsd_list, pattern = "_", n = 2)[,1]), union(psp_tab$SUB_GENE[psp_tab$SELF == "trans"], k_s_table$SUB_GENE[k_s_table$SELF == "trans"]))
+
+intersect(AK_autoonly_gene_list, unique(k_s_table$SUB_GENE[k_s_table$SELF == "trans"])) %>% length()
+intersect(AK_autoonly_gene_list, unique(regression$SUB_GENE[regression$SELF == "trans"])) %>% length()
+intersect(trans_detected_sites, AL_autoonly_rsd_list) %>% length()
+intersect(trans_regulated_sites, AL_autoonly_rsd_list)
+
+intersect(AL_autoonly_rsd_list, k_s_table$rsd[k_s_table$SELF == "trans"])
+intersect(AL_autoonly_rsd_list, psp_tab$rsd[psp_tab$SELF == "trans"])
+regression[regression$rsd %in% intersect(trans_regulated_sites, AL_autoonly_rsd_list) & regression$regulated,]
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

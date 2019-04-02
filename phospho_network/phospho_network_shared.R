@@ -256,6 +256,13 @@ formatPhosphosite = function(phosphosite_vector, gene_vector) {
   return(pho_rsd_split)
 }
 
+
+# load data ---------------------------------------------------------------
+load_mut_impact_proteome <- function() {
+  mut_impact_tab <- fread(input = paste0(ppnD, "genoalt/tables/adjustFDR_mut_impact_proteome/mut_impact_proteome_RNA_cptac2p_cptac3_tab_wFDR.txt"), data.table = F, sep = "\t")
+  return(mut_impact_tab)
+}
+
 load_ks_table <- function(protein) {
   ## Usage: k_s_table <- load_ks_table({kinase/phosphatase})
   if ( protein == "kinase" ) {
@@ -293,7 +300,8 @@ psp_tab <- load_psp()
 kinases <- unique(c(as.vector(omnipath_tab$GENE[omnipath_tab$enzyme_type == "kinase"]), as.vector(psp_tab$GENE)))
 phosphatases <- unique(omnipath_tab$GENE[omnipath_tab$enzyme_type == "phosphatase"])
 ## clean up
-kinases <- kinases[!(kinases %in% c("APC" ," AXIN1", "CTNNB1", "CCNE1", "CCNA2"))]
+kinases <- kinases[!(kinases %in% c("APC" ,"AXIN1", "CTNNB1", "CCNE1", "CCNE2", "CCNA2", "RPTOR", "RICTOR", "AKT1S1", "DEPTOR", "IL6ST", "PRKAR2B", 
+                                    "CCND1", "PIK3R1", "CDKN2A", "CCNB1"))]
 
 
 # list of tyrosine kinases ------------------------------------------------
@@ -333,16 +341,37 @@ annotate_enzyme_type  <- function(regression, kinases, phosphatases) {
   return(table2annotate)
 }
 
+pairs_cis_direct <- c(psp_tab$pair[psp_tab$pair_pro == "ERBB2:ERBB2"], 
+                      "ERBB2:ERBB2:Y1109", "ERBB2:ERBB2:Y1218", 
+                      psp_tab$pair[psp_tab$pair_pro == "AKT1:AKT1"], 
+                      "AKT1:AKT1:S184", "AKT1:AKT1:T10", "AKT1:AKT1:Y315", "AKT1:AKT1:S129", "AKT1:AKT1:T308", "AKT1:AKT1:T450",
+                      psp_tab$pair[psp_tab$pair_pro == "EGFR:EGFR"],
+                      psp_tab$pair[psp_tab$pair_pro == "MTOR:MTOR"], 
+                      "MTOR:MTOR:S2448", "MTOR:MTOR:S2478S2481", "MTOR:MTOR:S2481",
+                      psp_tab$pair[psp_tab$pair_pro == "MAPK1:MAPK1"],
+                      "MAPK1:MAPK1:T185", "MAPK1:MAPK1:Y187",
+                      psp_tab$pair[psp_tab$pair_pro == "MAP2K1:MAP2K1"],
+                      "MAP2K1:MAP2K1:S218", "MAP2K1:MAP2K1:S218S222", "MAP2K1:MAP2K1:S222", "MAP2K1:MAP2K1:S286", "MAP2K1:MAP2K1:S212",
+                      psp_tab$pair[psp_tab$pair_pro == "BRAF:BRAF"],
+                      "BRAF:BRAF:S151", "BRAF:BRAF:S365", "BRAF:BRAF:S446", "BRAF:BRAF:S750", "BRAF:BRAF:S750T753", "BRAF:BRAF:T401",
+                      psp_tab$pair[psp_tab$pair_pro == "FGFR2:FGFR2"],
+                      psp_tab$pair[psp_tab$pair_pro == "INSR:INSR"], "INSR:INSR:S1354",
+                      psp_tab$pair[psp_tab$pair_pro == "MET:MET"], 
+                      psp_tab$pair[psp_tab$pair_pro == "PDGFRA:PDGFRA"], 
+                      psp_tab$pair[psp_tab$pair_pro == "PIK3CG:PIK3CG"])
 annotate_ks_source <- function(regression) {
   table2annotate <- regression
+  table2annotate$Source <- NULL
+  table2annotate$is.direct <- NULL
   
   omnipath_tab <- load_omnipath()
   psp_tab <- load_psp()
   
   source_tab <- data.frame(pair = psp_tab$pair[!(psp_tab$pair %in% omnipath_tab$pair)], Source = "PhosphoSite")
   source_tab <- rbind(source_tab, omnipath_tab[, c("pair", "Source")])
-  
-  table2annotate <- merge(table2annotate, source_tab, all.x = T)
+  source_tab <- rbind(source_tab, data.frame(pair = pairs_cis_direct, Source = "PhosphoSite"))
+  source_tab <- unique(source_tab)
+  table2annotate <- merge(table2annotate, source_tab, by = c("pair"), all.x = T)
   table2annotate$is.direct <- ifelse(!is.na(table2annotate$Source) & !(table2annotate$Source %in% c("NetKIN", "PhosphoNetworks", "MIMP")), T, F)
   return(table2annotate)
 }
@@ -351,28 +380,53 @@ annotate_ks_source <- function(regression) {
 # filter regression and adjust results ------------------------------------
 change_regression_nonNA <- function(regression, reg_nonNA, reg_sig) {
   table2filter <- regression
-  if (any(is.na(table2filter$enzyme_type))) {
-    print("annotate enzyme type first!")
-    table2filter <- annotate_enzyme_type(regression = table2filter, kinases = kinases, phosphatases = phosphatases)
-  }
-  
+  table2filter$enzyme_type <- NULL
+  table2filter <- annotate_enzyme_type(regression = table2filter, kinases = kinases, phosphatases = phosphatases)
   table2filter <- table2filter[table2filter$Size >= reg_nonNA,]
+  ## clean up
+  table2filter <- table2filter %>%
+    filter(enzyme_type != "")
   
   ## adjust p-values to FDR
   name = c("pro_kin","pro_sub","pho_kin")
+  
   for (cancer_tmp in unique(table2filter$Cancer)) {
     for (enzyme_type_tmp in unique(table2filter$enzyme_type)) {
-      for(self_tmp in c(TRUE,FALSE)) {
+      for(self_tmp in unique(table2filter$SELF)) {
         for(coln_tmp in name) {#adjust pvalues for each variable
           row <- (table2filter$self==self_tmp) & (table2filter$Cancer==cancer_tmp) & (table2filter$enzyme_type==enzyme_type_tmp)
-          table2filter[row, paste("FDR_",coln_tmp,sep = "")] <-p.adjust(table2filter[row,paste("P_",coln_tmp,sep = "")],method = "fdr")
+          table2filter[row, paste("FDR_",coln_tmp,sep = "")] <- p.adjust(table2filter[row,paste("P_",coln_tmp,sep = "")], method = "fdr")
         }
       }
     }
   }
   
+  table2mark <- NULL
+  ## mark significance
+  for (enzyme_type_tmp in unique(table2filter$enzyme_type)) {
+    tab_tmp <- table2filter[table2filter$enzyme_type == enzyme_type_tmp,]
+    tab_tmp <- markSigKS(regression = tab_tmp, sig_thres = reg_sig[enzyme_type_tmp], enzyme_type = enzyme_type_tmp)
+    table2mark <- rbind(table2mark, tab_tmp)
+  }
+  
+  return(table2mark)
+}
+
+adjust_regression_by_nonNA <- function(regression, reg_nonNA, reg_sig) {
+  table2filter <- regression
+  table2filter$enzyme_type <- NULL
+  table2filter <- annotate_enzyme_type(regression = table2filter, kinases = kinases, phosphatases = phosphatases)
+  table2filter <- table2filter[table2filter$Size >= reg_nonNA,]
   ## clean up
-  table2filter <- table2filter[!(table2filter$GENE %in% c("APC", "AXIN1", "CCNE1", "CCNA2")),]
+  table2filter <- table2filter %>%
+    filter(enzyme_type != "")
+  
+  ## adjust p-values to FDR
+  name = c("pro_kin","pro_sub","pho_kin")
+  
+  for(coln_tmp in name) {#adjust pvalues for each variable
+    table2filter[, paste("FDR_",coln_tmp,sep = "")] <- FDR_by_id_columns(p_vector = table2filter[,paste("P_",coln_tmp,sep = "")], id_columns = c("SELF", "Cancer", "enzyme_type"), df = table2filter)
+  }
   
   table2mark <- NULL
   ## mark significance

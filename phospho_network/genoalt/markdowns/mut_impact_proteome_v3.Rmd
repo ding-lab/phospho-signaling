@@ -1,0 +1,761 @@
+---
+title: "Untitled"
+output: html_document
+---
+## source
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+setwd(baseD)
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+library(knitr)
+opts_knit$set(root.dir = baseD)
+
+```
+
+## inputs
+``` {r vairiables}
+num_genoalt_thres <- 5
+cancers2proces <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
+```
+
+```{r input-mut_impact_tab}
+mut_impact_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/genoalt/tables/test_SMG_mut_impact_proteome/SMG_mut_impact_tab.txt", data.table = F)
+mut_impact_tab <- mut_impact_tab %>%
+  mutate(pair_cat_signaling_sum = (SUB_GENE.is_TF_downstream + SUB_GENE.is_kinase_substrate + SUB_GENE.is_phosphatase_substrate + SUB_GENE.is_complex_partner))
+mut_impact_tab$GENE.is_SMG <- get_SMG_by_cancer(gene_vector = mut_impact_tab$GENE, cancer_vector = mut_impact_tab$cancer)
+```
+
+```{r input-mut-impact-second-degree-tab}
+mut_impact_second_degree_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/genoalt/tables/test_SMG_mut_impact_proteome_second_degree/SMG_mut_impact_tab.txt", data.table = F)
+mut_impact_second_degree_tab$GENE.is_SMG <- get_SMG_by_cancer(gene_vector = mut_impact_second_degree_tab$GENE, cancer_vector = mut_impact_second_degree_tab$cancer)
+```
+
+```{r input-pair-table}
+pair_tab_annotated <- fread(input = "./cptac2p/analysis_results/dependencies/tables/compile_protein_pair_table/protein_pair_table.txt", data.table = F)
+colnames(pair_tab_annotated)
+pair_cat <- colnames(pair_tab_annotated)[!(colnames(pair_tab_annotated) %in% c("GENE", "SUB_GENE", "pair_pro"))]
+pair_cat
+pair_cat_signaling <- c("SUB_GENE.is_TF_downstream", "SUB_GENE.is_kinase_substrate", "SUB_GENE.is_phosphatase_substrate", "SUB_GENE.is_complex_partner")
+```
+
+```{r check-if-all-kinases/phosphatase-in-regression-is-tested}
+pair_tab_annotated_smg <- pair_tab_annotated[pair_tab_annotated$GENE %in% unlist(SMGs),]
+all_kinases <- unique(regression$GENE)
+all_kinases %>% length()
+all_kinases[!(all_kinases %in% mut_impact_tab$SUB_GENE)]
+all_kinases[!(all_kinases %in% mut_impact_second_degree_tab$SUB_GENE)]
+all_kinases[!(all_kinases %in% pair_tab_annotated$SUB_GENE[pair_tab_annotated$GENE %in% mut_impact_second_degree_tab$SUB_GENE])]
+
+regression %>%
+  filter(SUB_GENE == "RB1" & regression$regulated) %>%
+  filter(cancer == "BRCA")
+
+regression %>%
+  filter(SUB_GENE == "RB1" & GENE == "CDK4") %>%
+  filter(cancer == "BRCA")
+```
+
+```{r see-most-signifcant}
+fdr_sig_genes <- mut_impact_tab %>%
+  filter(fdr < 0.05) %>%
+  select(GENE) %>%
+  unique() %>%
+  as.vector()
+fdr_sig_genes
+unlist(SMGs)[!(unlist(SMGs) %in% fdr_sig_genes$GENE)]
+unique(unlist(SMGs)[(unlist(SMGs) %in% fdr_sig_genes$GENE)])
+
+fdr_sig_genes <- mut_impact_tab %>%
+  filter(fdr < 0.1) %>%
+  select(GENE) %>%
+  unique() %>%
+  as.vector()
+fdr_sig_genes
+unlist(SMGs)[!(unlist(SMGs) %in% fdr_sig_genes$GENE)]
+
+mut_impact_tab %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  arrange(cancer)
+
+```
+
+## BRCA
+
+```{r BRCA-overview}
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "BRCA") %>%
+  filter(GENE != "TP53") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+```
+
+```{r BRCA-SMG-kinase}
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE %in% kinases) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "AKT1") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "AKT1")  %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+
+mut_impact_second_degree_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "AKT1") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "PIK3CA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_second_degree_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "PIK3CA") %>%
+  arrange(fdr_by_gene)  %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "PIK3CA") %>%
+  filter(SUB_GENE == "AKT1") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "MAP3K1") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_second_degree_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "MAP3K1") %>%
+  arrange(fdr_by_gene) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "MAP2K4") %>%
+  filter(fdr_by_gene < 0.1) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_second_degree_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "MAP2K4") %>%
+  arrange(fdr_by_gene) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+```
+
+```{r BRCA-SMG-kinase-first-degree}
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(!(GENE %in% c(kinases, phosphatases))) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat)
+
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE != "TP53") %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(!(GENE %in% c(kinases, phosphatases))) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat)
+
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "GATA3") %>%
+  filter(fdr_by_gene < 0.1) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_second_degree_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "GATA3") %>%
+  arrange(fdr_by_gene) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+
+mut_impact_second_degree_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "GATA3") %>%
+  filter(pair_pro_previous == "GATA3:EGFR") %>%
+  filter(p < 0.05) %>%
+  arrange(p) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "CDH1") %>%
+  filter(fdr_by_gene < 0.1) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "CDH1") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "CDH1") %>%
+  filter(pair_pro_previous == "CDH1:SRC") %>%
+  arrange(p) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+
+intersect(unique(mut_impact_tab$SUB_GENE[mut_impact_tab$fdr_by_gene < 0.05 & mut_impact_tab$GENE == "CDH1"]), pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE == "GSK3B"])
+intersect(unique(mut_impact_second_degree_tab$SUB_GENE[mut_impact_tab$fdr_by_gene < 0.05 & mut_impact_tab$GENE == "CDH1"]), pair_tab_annotated$GENE[pair_tab_annotated$SUB_GENE == "GSK3B"])
+
+```
+
+```{r BRCA-SMG-kinase-first-degree-TP53}
+tf_tab <- fread(input = "./Ding_Lab/Projects_Current/TP53_shared_data/resources/PPI/TF_interactions.txt", data.table = F)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "BRCA") %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_MOD_RSD == "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "BRCA") %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_MOD_RSD == "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE %in% tf_tab$target_genesymbol[tf_tab$source_genesymbol == "TP53" & tf_tab$is_stimulation == 1]) %>%
+  filter(meddiff < 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "BRCA") %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_MOD_RSD == "RNA") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(SUB_GENE %in% tf_tab$target_genesymbol[tf_tab$source_genesymbol == "TP53" & tf_tab$is_inhibition == 1]) %>%
+  filter(meddiff > 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(pair_pro_previous == "TP53:PLK1") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "PLK1"]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+    filter(meddiff > 0) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "RNA" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+    filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "PRO" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+  filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+    filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "PRO" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "PLK1"]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "RNA" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+  filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(pair_pro_previous == "TP53:CDK1") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "CDK1"]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+    filter(meddiff > 0) %>%
+  filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "RNA" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+    filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "PRO" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+  filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+    filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "PRO" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "CDK1"]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(meddiff > 0) %>%
+  filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "RNA" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+  filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene) 
+
+
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "CHEK1"]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(meddiff > 0) %>%
+  filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "RNA" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+  filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(pair_pro_previous == "TP53:MET") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "CHEK1"]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+    filter(meddiff > 0) %>%
+  filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "RNA" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+    filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "PRO" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+  filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+    filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "PRO" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "CHEK2"]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(meddiff > 0) %>%
+  filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "RNA" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+  filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(pair_pro_previous == "TP53:MET") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "CHEK2"]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+    filter(meddiff > 0) %>%
+  filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "RNA" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+    filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "PRO" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+  filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+    filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "PRO" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous) %>%
+  arrange(fdr_by_gene) 
+
+
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "MET"]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(meddiff > 0) %>%
+  filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "RNA" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+  filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(pair_pro_previous == "TP53:MET") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "MET"]) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+    filter(meddiff > 0) %>%
+  filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "RNA" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+    filter(!(SUB_GENE %in% mut_impact_second_degree_tab$SUB_GENE[mut_impact_second_degree_tab$GENE == "TP53" & mut_impact_second_degree_tab$affected_exp_type == "PRO" & mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$cancer == "BRCA"])) %>%
+  filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+    filter(!(SUB_GENE %in% mut_impact_tab$SUB_GENE[mut_impact_tab$GENE == "TP53" & mut_impact_tab$affected_exp_type == "PRO" & mut_impact_tab$p < 0.05 & mut_impact_tab$cancer == "BRCA"])) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE == "RB1") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene) 
+
+```
+
+```{r BRCA-SMG-kinase-second-degree}
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(pair) %>%
+  unique %>%
+  arrange(pair)
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "RNA") %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$SUB_GENE.is_TF_downstream & mut_impact_tab$fdr_by_gene < 0.05]) %>%
+  select(pair) %>%
+  unique %>%
+  arrange(pair)
+
+mut_impact_second_degree_tab <- mut_impact_second_degree_tab %>%
+    mutate(node_previous = str_split_fixed(pair_pro_previous, pattern = ":", n = 2)[,2]) %>%
+  mutate(node_previous_SUB_GENE = paste0(node_previous, ":", SUB_GENE)) %>%
+  mutate(pair_pro = paste0(GENE, ":", SUB_GENE))
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(SUB_GENE %in% c(kinases, phosphatases)) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(affected_exp_type == "PRO" | affected_exp_type == "PHO") %>%
+  # filter(pair_pro %in% mut_impact_second_degree_tab$pair_pro[mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$affected_exp_type == "RNA" & mut_impact_second_degree_tab$cancer == "BRCA"]) %>%
+  # filter(pair_pro %in% mut_impact_second_degree_tab$pair_pro[mut_impact_second_degree_tab$p < 0.05 & mut_impact_second_degree_tab$affected_exp_type == "PRO" & mut_impact_second_degree_tab$cancer == "BRCA"]) %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$SUB_GENE.is_TF_downstream &  mut_impact_tab$p < 0.05 & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$cancer == "BRCA"]) %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$SUB_GENE.is_TF_downstream & mut_impact_tab$p < 0.05 & mut_impact_tab$affected_exp_type == "PRO" & mut_impact_tab$cancer == "BRCA"]) %>%
+  filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  select(pair_pro) %>%
+  unique %>%
+  arrange(pair_pro)
+
+```
+
+```{r BRCA-TP53-CDK6}
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE == "CDK6") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$SUB_GENE.is_TF_downstream &  mut_impact_tab$p < 0.05 & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$cancer == "BRCA"]) %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$SUB_GENE.is_TF_downstream & mut_impact_tab$p < 0.05 & mut_impact_tab$affected_exp_type == "PRO" & mut_impact_tab$cancer == "BRCA"]) %>%
+    filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  select(node_previous_SUB_GENE, cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "BRCA") %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% c("MYC")) %>%
+  filter(p < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "CDK6"]) %>%
+  filter(SUB_MOD_RSD %in% omnipath_tab$SUB_MOD_RSD[omnipath_tab$GENE == "CDK6"]) %>%
+  filter(p < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(meddiff > 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "CDK6"]) %>%
+  filter(SUB_MOD_RSD %in% omnipath_tab$SUB_MOD_RSD[omnipath_tab$GENE == "CDK6"]) %>%
+  filter(p < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(meddiff > 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  unique() %>%
+  arrange(fdr_by_gene) 
+```
+
+```{r BRCA-TP53-NEK6}
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE == "NEK6") %>%
+  filter(fdr_by_gene < 0.05) %>%
+      filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$SUB_GENE.is_TF_downstream &  mut_impact_tab$p < 0.05 & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$cancer == "BRCA"]) %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$SUB_GENE.is_TF_downstream & mut_impact_tab$p < 0.05 & mut_impact_tab$affected_exp_type == "PRO" & mut_impact_tab$cancer == "BRCA"]) %>%
+    filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  select(node_previous_SUB_GENE, cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "BRCA") %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% c("ESR1")) %>%
+  filter(p < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "NEK6"]) %>%
+  filter(p < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(meddiff < 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene) 
+
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE.is_SMG == T) %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% omnipath_tab$SUB_GENE[omnipath_tab$GENE == "NEK6"]) %>%
+  filter(p < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(meddiff < 0) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num) %>%
+  arrange(fdr_by_gene) 
+```
+
+```{r BRCA-TP53-NME2}
+mut_impact_second_degree_tab %>% 
+  filter(cancer == "BRCA") %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE == "NME2") %>%
+  filter(fdr_by_gene < 0.05) %>%
+      filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$SUB_GENE.is_TF_downstream &  mut_impact_tab$p < 0.05 & mut_impact_tab$affected_exp_type == "RNA" & mut_impact_tab$cancer == "BRCA"]) %>%
+  filter(pair_pro_previous %in% mut_impact_tab$pair_pro[mut_impact_tab$SUB_GENE.is_TF_downstream & mut_impact_tab$p < 0.05 & mut_impact_tab$affected_exp_type == "PRO" & mut_impact_tab$cancer == "BRCA"]) %>%
+    filter(node_previous_SUB_GENE %in% pair_tab_annotated$pair_pro[pair_tab_annotated$SUB_GENE.is_TF_downstream]) %>%
+  select(node_previous_SUB_GENE, cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_pro_previous)
+
+
+
+
+```
+
+
+
+
+```{r OV}
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "OV") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "OV") %>%
+  filter(fdr_by_gene < 0.1) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat_signaling)
+```
+
+```{r CO}
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "CO") %>%
+  filter(GENE != "TP53") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "CO") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat)
+```
+```{r UCEC}
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "UCEC") %>%
+  filter(GENE != "TP53") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "UCEC") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "UCEC") %>%
+  filter(GENE == "CTNNB1") %>%
+  filter(SUB_GENE == "APC") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat) %>%
+  arrange(fdr_by_gene)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "UCEC") %>%
+  filter(GENE == "CTNNB1") %>%
+  filter(SUB_GENE == "AXIN1") %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat) %>%
+  arrange(fdr_by_gene)
+
+
+SMGs
+```
+
+```{r CCRCC}
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "CCRCC") %>%
+  filter(GENE != "TP53") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "UCEC") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat)
+```
+
+```{r LIHC}
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "LIHC") %>%
+  filter(GENE != "TP53") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat)
+
+mut_impact_tab %>% 
+  filter(GENE.is_SMG == T) %>%
+  filter(cancer == "LIHC") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, p, variant_class, num, pair_cat)
+```
+
+
+```{r TP53}
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(pair_cat) %>%
+  table()
+
+mut_impact_tab %>%
+  filter(GENE == "MTOR") %>%
+  filter(fdr < 0.05)
+
+mut_impact_tab %>%
+  filter(GENE == "MTOR") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(pair_cat_signaling) %>%
+  table()
+
+mut_impact_tab %>%
+  filter(GENE == "MTOR") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, variant_class, num, pair_cat_signaling)
+
+
+```
+
+```{r RB1}
+mut_impact_tab %>%
+  filter(GENE == "RB1") %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(pair_cat) %>%
+  table()
+
+mut_impact_tab %>%
+  filter(GENE == "RB1") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, variant_class, num, pair_cat_signaling)
+
+
+```
+
+```{r BRCA1}
+mut_impact_tab %>%
+  filter(GENE == "BRCA1") %>%
+  filter(pair_cat_signaling_sum > 0) %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(pair_cat) %>%
+  table()
+
+mut_impact_tab %>%
+  filter(GENE == "BRCA1") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, variant_class, num, pair_cat_signaling)
+
+
+```
+
+```{r MTOR}
+mut_impact_tab %>%
+  filter(GENE == "MTOR") %>%
+  filter(fdr < 0.05) %>%
+  select(pair_cat_signaling) %>%
+  table()
+
+mut_impact_tab %>%
+  filter(GENE == "MTOR") %>%
+  filter(fdr < 0.05)
+
+mut_impact_tab %>%
+  filter(GENE == "MTOR") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(pair_cat_signaling) %>%
+  table()
+
+mut_impact_tab %>%
+  filter(GENE == "MTOR") %>%
+  filter(fdr_by_gene < 0.05) %>%
+  select(cancer, pair, fdr_by_gene, fdr, meddiff, variant_class, num, pair_cat_signaling)
+
+SMGs
+```
+
+

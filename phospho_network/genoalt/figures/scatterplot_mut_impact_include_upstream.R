@@ -23,13 +23,13 @@ resultDnow <- makeOutDir(resultD = resultD)
 # enzyme <- "CTNNB1"; substrate <- "CDK6"; rsd <- "PRO"; enzyme_upstream <-  c("APC")
 # enzyme <- "CTNNB1"; substrate <- "PAK1"; rsd <- "T212"; enzyme_upstream <-  c("APC")
 # enzyme <- "CTNNB1"; substrate <- "CSNK1A1"; rsd <- "PRO"; enzyme_upstream <-  c("APC")
-# enzyme <- "AKT1"; substrate <- "GSK3B"; rsd <- "S9"; enzyme_upstream <-  NULL
-# enzyme <- "AKT1"; substrate <- "BAD"; rsd <- "S99"; enzyme_upstream <-  NULL
+# enzyme <- "AKT1"; substrate <- "GSK3B"; rsd <- "S9"; enzyme_upstream <-  c("PIK3CA")
+# enzyme <- "AKT1"; substrate <- "BAD"; rsd <- "S99"; enzyme_upstream <-  c("PIK3CA")
 # enzyme <- "TP53"; substrate <- "CHEK2"; rsd <- "T432"; enzyme_upstream <-  NULL
 # enzyme <- "TP53"; substrate <- "CHEK2"; rsd <- "PRO"; enzyme_upstream <-  NULL
 # enzyme <- "CTNNB1"; substrate <- "PRKD1"; rsd <- "PRO"; enzyme_upstream <-  NULL
 # enzyme <- "CTNNB1"; substrate <- "PRKD1"; rsd <- "S205"; enzyme_upstream <-  "APC"
-enzyme <- "APC"; substrate <- "GSK3B"; rsd <- "T390"; enzyme_upstream <-  c("CTNNB1", "FBXW7")
+# enzyme <- "APC"; substrate <- "GSK3B"; rsd <- "T390"; enzyme_upstream <-  c("CTNNB1", "FBXW7")
 # enzyme <- "CTNNB1"; substrate <- "CTNNB1"; rsd <- "S191"; enzyme_upstream <-  "APC"
 # enzyme <- "CTNNB1"; substrate <- "CTNNB1"; rsd <- "S552"; enzyme_upstream <-  NULL
 # enzyme <- "CTNNB1"; substrate <- "CTNNB1"; rsd <- "PRO"; enzyme_upstream <-  "APC"
@@ -37,11 +37,22 @@ enzyme <- "APC"; substrate <- "GSK3B"; rsd <- "T390"; enzyme_upstream <-  c("CTN
 # enzyme <- "APC"; substrate <- "CTNNB1"; rsd <- "PRO"; enzyme_upstream <-  c("CTNNB1")
 # enzyme <- "APC"; substrate <- "PRKD1"; rsd <- "S205"; enzyme_upstream <-  c("CTNNB1")
 # enzyme <- "APC"; substrate <- "CTNNB1"; rsd <- "S191"; enzyme_upstream <-  c("CTNNB1")
-enzyme <- "FBXW7"; substrate <- "GSK3B"; rsd <- "T390"; enzyme_upstream <-  c("CTNNB1", "APC")
-enzyme <- "FBXW7"; substrate <- "CTNNB1"; rsd <- "S191"; enzyme_upstream <-  c("CTNNB1", "APC")
+# enzyme <- "FBXW7"; substrate <- "GSK3B"; rsd <- "T390"; enzyme_upstream <-  c("CTNNB1", "APC")
+# enzyme <- "FBXW7"; substrate <- "CTNNB1"; rsd <- "S191"; enzyme_upstream <-  c("CTNNB1", "APC")
+# enzyme <- "FBXW7"; substrate <- "CTNNB1"; rsd <- "PRO"; enzyme_upstream <-  c("CTNNB1", "APC")
+# enzyme <- "TP53"; substrate <- "IKBKB"; rsd <- "PRO"; enzyme_upstream <- NULL
+# enzyme <- "JAK1"; substrate <- "STAT3"; rsd <- "Y705"; enzyme_upstream <- NULL
+# enzyme <- "TP53"; substrate <- "CDK1"; rsd <- "PRO"; enzyme_upstream <- NULL
+# enzyme <- "TP53"; substrate <- "TP53BP1"; rsd <- "PRO"; enzyme_upstream <- NULL
+# enzyme <- "TP53"; substrate <- "TP53BP1"; rsd <- "S1683"; enzyme_upstream <- NULL
+# enzyme <- "TP53"; substrate <- "CDK1"; rsd <- "Y15"; enzyme_upstream <- NULL
+# enzyme <- "TP53"; substrate <- "ATR"; rsd <- "PRO"; enzyme_upstream <- NULL
+# enzyme <- "TP53"; substrate <- "ATR"; rsd <- "T1989"; enzyme_upstream <- NULL
+# enzyme <- "MTOR"; substrate <- "EIF4EBP1"; rsd <- "S70"; enzyme_upstream <-  c("PIK3CA")
+# enzyme <- "MTOR"; substrate <- "EIF4EBP1"; rsd <- "S65"; enzyme_upstream <-  c("PIK3CA")
+enzyme <- "AKT1"; substrate <- "LMNA"; rsd <- "S301"; enzyme_upstream <-  c("PIK3CA")
 
-enzyme <- "FBXW7"; substrate <- "CTNNB1"; rsd <- "PRO"; enzyme_upstream <-  c("CTNNB1", "APC")
-
+  
 ## make directory
 subdir1 <- paste0(resultDnow, enzyme, "/")
 dir.create(subdir1)
@@ -51,8 +62,8 @@ subdir3 <- paste0(subdir2, rsd, "/")
 dir.create(subdir3)
 
 ## do for each cancer type
-# for (cancer in c("BRCA", "UCEC", "LIHC", "CO", "OV")) {
-for (cancer in c( "CO", "UCEC")) {
+for (cancer in c("BRCA", "UCEC", "LIHC", "CO", "OV", "CCRCC")) {
+# for (cancer in c( "CCRCC")) {
     
   subdir4 <- paste0(subdir3, cancer, "/")
   dir.create(subdir4)
@@ -114,8 +125,6 @@ for (cancer in c( "CO", "UCEC")) {
     upstream_mut_partIDs <- NULL
   }
   
-
-  
   ## get the patient IDs with substrate alterations
   if (substrate %in% mut_mat$Hugo_Symbol) {
     substrate_mut_partIDs <- partIDs_overlap[(mut_mat[mut_mat$Hugo_Symbol == substrate, partIDs_overlap] != "") & (mut_mat[mut_mat$Hugo_Symbol == substrate, partIDs_overlap] != "Silent")]
@@ -131,9 +140,11 @@ for (cancer in c( "CO", "UCEC")) {
   df <- melt(affected_exp_substrate)
   head(df)
   colnames(df) <- c("partID", "sub_exp")
-  df <- df[df$partID %in% c(control_partIDs, enzyme_mut_partIDs),]
+  if (is.null(enzyme_upstream)) {
+    df <- df[df$partID %in% c(control_partIDs, enzyme_mut_partIDs),]
+  }
   df$group <- "control"
-  # df$group[df$partID %in% upstream_mut_partIDs] <- "upstream_mutation"
+  df$group[df$partID %in% upstream_mut_partIDs] <- "upstream_mutation"
   df$group[df$partID %in% enzyme_mut_partIDs] <- "enzyme_mutation"
   # if (enzyme != substrate) {
   #   df$group[df$partID %in% substrate_mut_partIDs] <- "substrate_mutation"
@@ -175,38 +186,49 @@ for (cancer in c( "CO", "UCEC")) {
   ### make plot
   tab2p <- df
   tab2p$x <- tab2p$group
-  tab2p$x <- factor(tab2p$x, levels = c("upstream_mutation", "enzyme_mutation", "substrate_mutation", "control"))
+  tab2p$x <- factor(tab2p$x, levels = c( "enzyme_mutation", "upstream_mutation", "control",  "substrate_mutation"))
   tab2p$y <- as.vector(tab2p$sub_exp)
-  
-  
+  tab2p <- unique(tab2p)
   pos <- position_jitter(width = 0.2, seed = 1)
   p = ggplot(tab2p, aes(x=x, y=y))
   p = p + geom_point(color = "black", fill = "black", shape = 16, position = pos, stroke = 0, alpha = 0.6, size = 2)
   p = p + geom_boxplot(aes(fill = group),  color = NA, alpha = 0.4, notch = T)
-  p = p + scale_fill_manual(values = c("enzyme_mutation" = set1[1], "control" = "grey50"))
+  p = p + scale_fill_manual(values = c("enzyme_mutation" = set1[1], "control" = "grey50", "upstream_mutation" = set1[1]))
   # p = p + geom_text_repel(data = tab2p[!is.na(df$is.outlier_high) & (df$is.outlier_high | df$is.outlier_low),], mapping = aes(segment.color = group, label= text, color = group),
   #                         force = 1, segment.size = 0.5, segment.alpha = 0.2, size = 2, alpha=0.6, position = pos)
-  p = p + labs(y=paste0(substrate, " ", rsd, " phosphorylation(log2 ratio)"))
+  if (rsd == "PRO") {
+    p = p + labs(y=paste0(substrate, " protein abundance(log2 ratio)"))
+  } else {
+    p = p + labs(y=paste0(substrate, " ", rsd, " phosphorylation\n(log2 ratio)"))
+    
+  }
   p = p + theme_nogrid()
-  p = p + theme(axis.title.x = element_blank(), axis.title.y = element_text(size = 15, face = "bold"),
-                axis.text.x = element_text(size= 20, vjust=0.5, hjust = 0.5, face = "bold"),
-                axis.text.y = element_text(colour="black", size=8))
   p = p + theme(title = element_text(size = 18, face = "bold"))
-  # p = p + stat_compare_means(comparisons = my_comparisons[sample_type2test], label.y = c(quantile(x = tab2p$y, probs = 0.99, na.rm = T),
-  #                                                                                        quantile(x = tab2p$y, probs = 0.9, na.rm = T), quantile(x = tab2p$y, probs = 0.1, na.rm = T),
-  #                                                                                        quantile(x = tab2p$y, probs = 0.75, na.rm = T), quantile(x = tab2p$y, probs = 0.25, na.rm = T)), method = "wilcox.test")
-  p = p + stat_compare_means(label.y = max(tab2p$y, na.rm = T))     # Add global Anova p-value
+  p = p + stat_compare_means(data = tab2p, mapping = aes(x = x, y = y, label = ..p.signif..), symnum.args = symnum.args, ref.group = "control")     # Add global Anova p-value
   p = p + scale_x_discrete(breaks = c("upstream_mutation", 
                                       "enzyme_mutation", "substrate_mutation", "control"),
-                           label = c(paste0(enzyme_upstream[1], "\nor_other_mutated"),
+                           label = c(paste0(enzyme_upstream, "\nmutated"),
                                      paste0(enzyme, "\nmutated"),
                                      paste0(substrate, "\nmutated"),
                                      "control"))
   p <- p + guides(fill = F)
-  p
-  fn = paste0(subdir4, enzyme, "_", substrate, "_", rsd, "_with_upstream", paste0(enzyme_upstream, collapse = "_"), ".pdf")
-  ggsave(file=fn, height= 3, width = 3, useDingbats=FALSE)
+  if (!is.null(enzyme_upstream)) {
+    p = p + theme(axis.title.x = element_blank(), axis.title.y = element_text(size = 10, face = "bold"),
+                  axis.text.x = element_text(size= 15, vjust=0.5, hjust = 0.5, face = "bold"),
+                  axis.text.y = element_text(colour="black", size=8))
+    p
+    fn = paste0(subdir4, enzyme, "_", substrate, "_", rsd, "_with_upstream", paste0(enzyme_upstream, collapse = "_"), ".pdf")
+    ggsave(file=fn, height= 3, width = 4, useDingbats=FALSE)
+  } else {
+    p = p + theme(axis.title.x = element_blank(), axis.title.y = element_text(size = 10, face = "bold"),
+                  axis.text.x = element_text(size= 20, vjust=0.5, hjust = 0.5, face = "bold"),
+                  axis.text.y = element_text(colour="black", size=8))
+    p
+    fn = paste0(subdir4, enzyme, "_", substrate, "_", rsd, "_with_upstream", paste0(enzyme_upstream, collapse = "_"), ".pdf")
+    ggsave(file=fn, height= 3, width = 3*length(unique(tab2p$group))/2, useDingbats=FALSE)
+  }
 
+stop("")
   
   # ## test enzyme_mutation to control
   # if (length(tab2p$sub_exp[tab2p$group == "enzyme_mutation" & !is.na(tab2p$sub_exp)]) == 0) {

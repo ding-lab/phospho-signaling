@@ -70,8 +70,8 @@ tab$SELF <- ifelse(as.vector(tab$KINASE) == as.vector(tab$SUBSTRATE), "cis", "tr
 resultDnow <- makeOutDir(resultD = resultD)
 subdir <- paste0(resultDnow, "trans", "/")
 dir.create(subdir)
-# for (cancer in cancers_sort) {
-for (cancer in c("BRCA")) {
+for (cancer in cancers_sort) {
+# for (cancer in c("BRCA")) {
   ## input cross tab for SRM values
   pp_cancer <- pp_tab[, c("Peptide.Sequence", "Protein.Name", colnames(pp_tab)[grepl(pattern = substr(cancer, start = 1, stop = 2), x = colnames(pp_tab))])]
   up_cancer <- up_tab[, c("Peptide.Sequence", "Protein.Name", colnames(pp_tab)[grepl(pattern = substr(cancer, start = 1, stop = 2), x = colnames(up_tab))])]
@@ -127,7 +127,7 @@ for (cancer in c("BRCA")) {
         df2$tumor_normal <- "Tumor"
         col_tmp <- intersect(colnames(df1), colnames(df2))
         df <- rbind(df1[,col_tmp], df2[,col_tmp])
-        df <- df[!is.na(remove_outliers(df$phog_kin, out_thres = 1.5)),]
+        df <- df[!is.na(remove_outliers_IQR(df$phog_kin, out_thres = 1.5)),]
 
         ## reshape the data.frame
         df_cor <- df[df$technology == "global", c("phog_kin", "pho_sub")]
@@ -169,19 +169,19 @@ for (cancer in c("BRCA")) {
           df3$srm_samples <- !is.na(df3$pho_sub.srm)
           
           df <- df3
-          df <- df[!is.na(df$pho_sub.srm) & !is.na(df$phog_kin) & !is.na(df$pro_sub.srm),]
+          df2test <- df[!is.na(df$pho_sub.srm) & !is.na(df$phog_kin) & !is.na(df$pro_sub.srm),]
           if (nrow(df) > 2) {
             sink(paste0(subdir3, cancer, "_", kinase, "_", upeptide, "_", sub, "_", rsd, "_", peptide ,"_srm4lm.txt"), append=FALSE, split=FALSE)
-            fit1 <- lm(pho_sub.srm ~ pro_sub.srm + phog_kin,data = df)
+            fit1 <- lm(pho_sub.srm ~ pro_sub.srm + phog_kin,data = df2test)
             print(paste0(kinase))
-            print(nrow(df))
+            print(nrow(df2test))
             print(coef(summary(fit1))[3,4])
             print(fit1$coefficients[3])
             sink()
             closeAllConnections()
             
             
-            p = ggplot(df)
+            p = ggplot(df3)
             p = p + geom_point(aes(x=phog_kin, y=pho_sub.srm), alpha=0.9, stroke = 0)
             p <- p + geom_smooth(formula = y ~ x, mapping = aes(x = phog_kin, y = pho_sub.srm), method = lm, alpha = 0.4)
             p = p + labs(x = paste0("global phosphorylaion abundance for ", kinase),
@@ -213,8 +213,8 @@ tab$SELF <- ifelse(as.vector(tab$KINASE) == as.vector(tab$SUBSTRATE), "cis", "tr
 resultDnow <- makeOutDir(resultD = resultD)
 subdir <- paste0(resultDnow, "cis", "/")
 dir.create(subdir)
-for (cancer in c("BRCA")) {
-# for (cancer in c("OV")) {
+for (cancer in c("OV")) {
+# for (cancer in cancers_sort) {
 
   ## input cross tab for SRM values
   pp_cancer <- pp_tab[, c("Peptide.Sequence", "Protein.Name", colnames(pp_tab)[grepl(pattern = substr(cancer, start = 1, stop = 2), x = colnames(pp_tab))])]
@@ -239,6 +239,13 @@ for (cancer in c("BRCA")) {
     sub <- unique(tab_pep$SUBSTRATE)
     rsd <- unique(tab_pep$SUB_MOD_RSD)
     pho_sub <- pho[pho$SUBSTRATE == sub & pho$SUB_MOD_RSD == rsd,]
+    
+    # if (sub != "ERBB2") {
+    #   next()
+    # }
+    if (sub != "EGFR") {
+      next()
+    }
     
     if (nrow(pho_sub) > 0 ){
       pho_sub.m <- melt(pho_sub, id.vars = c("SUBSTRATE", "transcript", "SUB_MOD_RSD"))
@@ -283,9 +290,9 @@ for (cancer in c("BRCA")) {
           
           # plot global correlation -------------------------------------------------
           df <- df3
-          df$y <- remove_outliers(x = df$pho_sub.global, out_thres = 3, na.rm = T)
+          df$y <- remove_outliers_IQR(x = df$pho_sub.global, out_thres = 3, na.rm = T)
           df$y[!is.na(df$pho_sub.srm)] <- df$pho_sub.global[!is.na(df$pho_sub.srm)]
-          df$x <- remove_outliers(x = df$pro_kin.global, out_thres = 3, na.rm = T)
+          df$x <- remove_outliers_IQR(x = df$pro_kin.global, out_thres = 3, na.rm = T)
           df$x[!is.na(df$pro_kin.srm)] <- df$pro_kin.global[!is.na(df$pro_kin.srm)]
           
           # fn = paste0(subdir3, cancer, "_", kinase, "_", upeptide, "_", sub, "_", rsd, "_", peptide ,"_global.pdf")
@@ -325,6 +332,7 @@ for (cancer in c("BRCA")) {
             sink()
             closeAllConnections()
             
+            stop("")
             fn = paste0(subdir3, cancer, "_", kinase, "_", upeptide, "_", sub, "_", rsd, "_", peptide ,"_srm4retro.pdf")
             p <- ggplot()
             p <- p + geom_point(data = df, mapping = aes(x = pro_kin.srm, y = pho_sub.srm), alpha = 0.8)

@@ -1,0 +1,459 @@
+---
+title: "SMG cascade"
+output: html_document
+---
+## source
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+library(knitr)
+opts_knit$set(root.dir = baseD)
+setwd(baseD)
+source('./cptac2p_analysis/preprocess_files/preprocess_files_shared.R')
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+```
+
+## set variables
+``` {r variables}
+cancers2process <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
+```
+
+
+
+## inputs
+``` {r input-regulatory-sites}
+regulatory_sites <- fread(input = "./Ding_Lab/Projects_Current/CPTAC/pan3can_shared_data/Phospho_databases/PhosphositePlus/Mar_04_2019/Regulatory_sites", data.table = F)
+regulatory_sites <- regulatory_sites %>%
+  mutate(SUB_MOD_RSD = str_split_fixed(string = MOD_RSD, pattern = "-", n = 2)[,1])
+regulatory_sites2merge <- regulatory_sites %>%
+  select(GENE, SUB_MOD_RSD, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT) %>%
+  unique
+```
+
+```{r input-regression-and-annotate}
+regression <- fread(input = paste0(ppnD, "regression/tables/annotate_regression_with_mut_impact/", 
+                                   "regression_cptac2p_cptac3_tumor_reg_nonNA20_mut_impact_cancer_specificity_annotated.txt"),
+                    data.table = F)
+reg_sig <- c(0.05, 0.05); names(reg_sig) <- c("kinase", "phosphatase")
+regression %>% nrow()
+regression <- regression %>%
+  filter(pair_pro %in% omnipath_tab$pair_pro[!(omnipath_tab$Source %in% c("NetKIN", "PhosphoNetworks", "MIMP"))] | pair_pro %in% psp_tab$pair_pro)
+regression %>% nrow()
+
+regression <- adjust_regression_by_nonNA(regression = regression, reg_nonNA = 20, reg_sig = reg_sig)
+regression <- annotate_ks_source(regression = regression)
+regression <- merge(regression, regulatory_sites2merge, by.x = c("SUBSTRATE", "SUB_MOD_RSD"), by.y = c("GENE", "SUB_MOD_RSD"), all.x = T)
+
+```
+
+```{r order-SMGs}
+sort(table(unlist(SMGs)))
+```
+
+## by cancer 
+``` {r BRCA}
+cancer_tmp <- "BRCA"
+regression %>%
+  filter(regulated == T & GENE %in% unlist(SMGs[[cancer_tmp]]) & Cancer == cancer_tmp) %>%
+  filter(is.direct == T | !is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT)
+
+regression %>%
+  filter(regulated == T & SUB_GENE %in% unlist(SMGs[[cancer_tmp]]) & Cancer == cancer_tmp) %>%
+  filter(is.direct == T | !is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT)
+
+```
+
+```{r OV}
+cancer_tmp <- "OV"
+regression %>%
+  filter(regulated == T & GENE %in% unlist(SMGs[[cancer_tmp]]) & Cancer == cancer_tmp) %>%
+  filter(is.direct == T | !is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT)
+
+regression %>%
+  filter(regulated == T & SUB_GENE %in% unlist(SMGs[[cancer_tmp]]) & Cancer == cancer_tmp) %>%
+  filter(is.direct == T | !is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT)
+```
+
+```{r CO}
+cancer_tmp <- "CO"
+regression %>%
+  filter(regulated == T & GENE %in% unlist(SMGs[[cancer_tmp]]) & Cancer == cancer_tmp) %>%
+  filter(is.direct == T | !is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT)
+
+regression %>%
+  filter(regulated == T & SUB_GENE %in% unlist(SMGs[[cancer_tmp]]) & Cancer == cancer_tmp) %>%
+  filter(is.direct == T | !is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT)
+
+```
+
+```{r UCEC}
+cancer_tmp <- "UCEC"
+regression %>%
+  filter(regulated == T & GENE %in% unlist(SMGs[[cancer_tmp]]) & Cancer == cancer_tmp) %>%
+  filter(is.direct == T | !is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT)
+
+regression %>%
+  filter(regulated == T & SUB_GENE %in% unlist(SMGs[[cancer_tmp]]) & Cancer == cancer_tmp) %>%
+  filter(is.direct == T | !is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT)
+
+```
+
+```{r CCRCC}
+cancer_tmp <- "CCRCC"
+regression %>%
+  filter(regulated == T & GENE %in% unlist(SMGs[[cancer_tmp]]) & Cancer == cancer_tmp) %>%
+  filter(is.direct == T | !is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(pair,Source, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT, Cancer, coef_pho_kin, FDR_pho_kin)
+
+regression %>%
+  filter(regulated == T & SUB_GENE %in% unlist(SMGs[[cancer_tmp]]) & Cancer == cancer_tmp) %>%
+  filter(is.direct == T | !is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(pair,Source, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT, Cancer, coef_pho_kin, FDR_pho_kin)
+```
+
+## TP53 pathway
+```{r TP53}
+regression %>%
+  filter(regulated == T & SUB_GENE == "TP53") %>%
+  select(Source)
+
+omnipath_tab %>%
+  filter(GENE == "IKBKB" & SUB_GENE == "TP53")
+
+psp_tab %>%
+  filter(GENE == "IKBKB" & SUB_GENE == "TP53")
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "ATM")
+```
+
+
+## cell cycle pathway
+```{r cell-cycle}
+regression %>%
+  filter(regulated == T & SUB_GENE == "RB1") %>%
+  select(pair, Cancer, Source)
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "RB1") %>%
+  select(pair, Cancer, Source) %>%
+  filter(!is.na(Source) & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks")))
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "RB1") %>%
+  select(pair, Cancer, Source) %>%
+  filter(!is.na(Source) & (Source %in% c("NetKIN", "MIMP", "PhosphoNetworks")))
+
+regression %>%
+  filter(regulated == T & SUB_GENE %in% c("CCNE1", "CCND1", "CCND2", "CCND3")) %>%
+  select(pair, Cancer, Source)
+
+```
+
+## MTOR pathway
+```{r PIK3CA-MTOR}
+## PIK3CA in breast, colorectal and endometrial cancers
+## MTOR in renal cancer
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 &SUB_GENE == "PIK3CA")
+regression %>%
+  filter(SUB_GENE == "PIK3CA")
+## nothing correlated with PIK3CA
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "PIK3CA") %>%
+  select(pair, Cancer, Source)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & SUB_GENE == "EIF4EBP1")  %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin)
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "EIF4EBP1") %>%
+  select(pair, Cancer, Source) %>%
+  filter(!is.na(Source) & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks")))
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "EIF4EBP1") %>%
+  select(pair, Cancer, Source) %>%
+  filter(!is.na(Source) & (Source %in% c("NetKIN", "MIMP", "PhosphoNetworks")))
+
+```
+
+```{r MTOR}
+regression %>%
+  filter(GENE %in% "MTOR" & SUB_GENE %in% c("RPS6KB1")) %>%
+  # filter(!is.na(Source)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin)
+
+regression %>%
+  filter(GENE %in% "MTOR" & SUB_GENE %in% c("AKT1")) %>%
+  # filter(!is.na(Source)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1) %>%
+  filter(GENE %in% "AKT1" & SUB_GENE %in% c("TSC2")) %>%
+  # filter(!is.na(Source)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(-coef_pho_kin)
+
+regression %>%
+  filter(GENE %in% "RPS6KB1" & SUB_GENE %in% c("PIK3CA", "PIK3R1", "IRS1", "IRS2")) %>%
+  # filter(!is.na(Source)) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1) %>%
+  filter(SUB_GENE %in% c("TSC2")) %>%
+  select(pair, Cancer, Source, coef_pho_kin) %>%
+  filter(!is.na(Source)) %>%
+  arrange(-coef_pho_kin)
+```
+
+## PI3K pathway
+
+```{r AKT1}
+regression %>%
+  filter(regulated == T & GENE == "AKT1")  %>%
+  select(pair, Cancer, Source)
+
+regression %>%
+  filter(regulated == T & GENE == "AKT1") %>%
+  select(pair, Cancer, Source) %>%
+  filter(!is.na(Source) & !(is.na(Source)))
+
+regression %>%
+  filter(regulated == T & GENE == "AKT1") %>%
+  select(pair, Cancer, Source) %>%
+  filter(!is.na(Source) & !(is.na(Source))) %>%
+  filter(!is.na(Source) & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks")))
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "AKT1") %>%
+  filter(SUB_GENE %in% c("BAD", "TSC1", "TSC2", "GSK3B", "FOXO3", "AKT1S1")) %>%
+  select(pair, Cancer, Source, coef_pho_kin, regulated_uniq) %>%
+  arrange(-coef_pho_kin)
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "AKT1" & SELF != "cis")  %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+
+
+```
+
+```{r PTEN}
+regression %>%
+  filter(FDR_pho_kin < 0.1 & coef_pho_kin < 0 & GENE == "PTEN")  %>%
+  select(pair, Cancer, Source)
+
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "PTEN")  %>%
+  select(pair, Cancer, Source)
+
+regression %>%
+  filter(regulated == T & GENE == "AKT1") %>%
+  select(pair, Cancer, Source) %>%
+  filter(!is.na(Source) & !(is.na(Source)))
+
+regression %>%
+  filter(regulated == T & GENE == "AKT1") %>%
+  select(pair, Cancer, Source) %>%
+  filter(!is.na(Source) & !(is.na(Source))) %>%
+  filter(!is.na(Source) & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks")))
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "AKT1") %>%
+  filter(SUB_GENE %in% c("BAD", "TSC1", "TSC2", "GSK3B", "FOXO3", "MDM2")) %>%
+  filter(coef_pho_kin > 0) %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & SUB_GENE == "AKT1" & GENE == "MTOR")  %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "GSK3B") %>%
+  select(pair, Cancer, Source) %>%
+  filter(!is.na(Source) & !(is.na(Source)))
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "GSK3B") %>%
+  select(pair, Cancer, Source) %>%
+  filter(!is.na(Source) & !(is.na(Source))) %>%
+  filter(!is.na(Source) & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks")))
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "GSK3B") %>%
+  filter(!is.na(Source) & !(is.na(Source))) %>%
+  filter(!is.na(Source) & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks"))) %>%
+  filter(Cancer == "BRCA") %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "GSK3B") %>%
+  filter(!is.na(Source) & !(is.na(Source))) %>%
+  filter(Cancer == "BRCA") %>%
+  filter(coef_pho_kin > 0) %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "GSK3B") %>%
+  filter(!is.na(Source) & !(is.na(Source))) %>%
+  filter(!is.na(Source) & !(Source %in% c("NetKIN", "MIMP", "PhosphoNetworks"))) %>%
+  filter(Cancer != "BRCA") %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+
+```
+
+```{r PIK3R1}
+## SMGs in breast, renal and endometrial cancers
+SMGs
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "PIK3R1")
+
+```
+## RAS
+
+```{r RAS-RAF}
+regression %>%
+  filter(FDR_pho_kin < 0.1 & SUB_GENE == "KRAS")  %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & SUB_GENE == "NRAS")  %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "BRAF")  %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+uijkregression %>%
+  filter(FDR_pho_kin < 0.1 & GENE %in% c("MAP2K1", "MAP2K2")  & SUB_GENE == "BRAF")  %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE %in% c("MAP2K1", "MAP2K2")  & SUB_GENE %in% c("MAPK1", "MAPK3"))  %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & SUB_GENE %in% c("MAP2K1", "MAP2K2"))  %>%
+  filter(!is.na(Source)) %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "MAP2K1")  %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & coef_pho_kin < 0 & GENE == "MAP2K2")  %>%
+  select(pair, Cancer, Source)
+
+regression %>%
+  filter(SUB_GENE %in% c("DUSP4")  & GENE %in% c("MAPK1", "MAPK3"))  %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+```
+
+```{r MAP3K1}
+regression %>%
+  filter(FDR_pho_kin < 0.1 & SUB_GENE == "MAP3K1") %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "MAP3K1") %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "MAP2K4") %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "MAPK9") %>%
+  select(pair, Cancer, Source, coef_pho_kin) %>%
+  filter(!is.na(Source))
+## JUN S63
+```
+
+```{r MAP3K4}
+regression %>%
+  filter(FDR_pho_kin < 0.1 & SUB_GENE == "MAP3K4") %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & GENE == "MAP3K4") %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+```
+
+## WNT
+
+```{r CTNNB1}
+regression %>%
+  filter(FDR_pho_kin < 0.1 & SUB_GENE == "CTNNB1") %>%
+  filter(Cancer %in% c("CO", "UCEC", "BRCA")) %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "CTNNB1") %>%
+  filter(Cancer %in% c("CO", "UCEC", "BRCA")) %>%
+  select(pair, Cancer, Source, coef_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & SUB_GENE == "CTNNB1") %>%
+  select(pair, Cancer, Source, coef_pho_kin) %>%
+  filter(!is.na(Source))
+
+regression %>%
+  filter(SUB_GENE == "CTNNB1" & GENE == "GSK3B") %>%
+  filter(Cancer %in% c("CO", "UCEC", "BRCA")) %>%
+  arrange(FDR_pho_kin) %>%
+  select(pair, Cancer, Source, coef_pho_kin, FDR_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & SUB_GENE == "APC") %>%
+  select(pair, Cancer, Source, coef_pho_kin) %>%
+  filter(!is.na(Source))
+
+```
+
+```{r APC}
+## SMGs in colorectal cancers
+SMGs
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "APC")
+
+```
+
+## SWI/SNF
+```{r ARID1A}
+regression %>%
+  filter(regulated == T & SUB_GENE == "ARID1A")
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "VHL")
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "PBRM1")
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "BAP1")
+
+regression %>%
+  filter(regulated == T & SUB_GENE == "KDM5C")
+```
+

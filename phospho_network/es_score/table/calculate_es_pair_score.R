@@ -18,7 +18,7 @@ reg_nonNA <- 20
 enzyme_type <- "kinase"
 fdr_pp <- 0.1
 fdr_pk <- 0.05
-cancers2process <- c("BRCA")
+cancers2process <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
 ## the parameters for the input proteome data files
 data2process <- matrix(data = c("BRCA", "CDAP", "tumor", "scaled", "cptac2p",
                                 "CO", "CDAP", "tumor", "scaled", "cptac2p",
@@ -31,8 +31,11 @@ outlier_sd <- 1.5
 
 
 # input regression result table -------------------------------------------
-regression <- fread(input = paste0(ppnD, "regression/tables/", "change_regression_nonNA/", 
-                                   "regression", "_", "cptac2p_cptac3", "_", "tumor", "_reg_nonNA", reg_nonNA, ".txt"), data.table = F)
+# regression <- fread(input = paste0(ppnD, "regression/tables/", "change_regression_nonNA/", 
+#                                    "regression", "_", "cptac2p_cptac3", "_", "tumor", "_reg_nonNA", reg_nonNA, ".txt"), data.table = F)
+regression <- fread(input = paste0(ppnD, "regression/tables/annotate_regression_with_mut_impact/", 
+                                   "regression_cptac2p_cptac3_tumor_reg_nonNA20_mut_impact_cancer_specificity_annotated.txt"),
+                    data.table = F)
 ## already annotated with the supporting evidence for each pair
 
 ## divide into kinase and phosphatase related
@@ -47,6 +50,11 @@ regression$regulated <- (regression$fdr_sig & regression$coef_sig)
 ## the scores for the same pairs are generated for all cancers
 pairs2generate <- unique(regression$pair[!is.na(regression$Source) & !(regression$Source %in% c("MIMP", "PhosphoNetworks", "NetKIN"))])
 
+## add mutational associated pairs
+pairs2generate <- unique(c(pairs2generate, 
+                           unique(regression$pair[regression$SUB_GENE %in% unlist(SMGs) & regression$p.SUB_GENE < 0.05 & !is.na(regression$p.SUB_GENE)]),
+                           unique(regression$pair[regression$GENE %in% unlist(SMGs) & regression$p.GENE < 0.05 & !is.na(regression$p.GENE)])))
+
 ## since the cis pairs are most likley going to show effect however the site-levelr annotation difference impede the exact match, here I'll just include all regulated ones
 pairs2generate <- unique(c(pairs2generate, unique(regression$pair[regression$regulated & regression$SELF == "cis"])))
 pairs2generate %>% length()
@@ -60,7 +68,7 @@ subdir1 <- paste0(makeOutDir(resultD = resultD), enzyme_type, "/")
 dir.create(subdir1)
 
 # for (i in c(2))) {
-for (i in 1:3) {
+for (i in 1:5) {
   cancer <- data2process[i,1]
   pipeline_type <- data2process[i,2]
   sample_type <- data2process[i,3]
@@ -69,7 +77,7 @@ for (i in 1:3) {
   
   if (!file.exists(paste0(subdir1, "esscore_tab", "_", cancer, "_", enzyme_type, "_reg_nonNA", reg_nonNA, ".txt"))) {
     ## input gene-level and site-level phosphorylation and protein levels
-    pro_data <- loadParseProteomicsData(cancer = cancer, expresson_type = "PRO", sample_type = sample_type, pipeline_type = pipeline_type, norm_type = norm_type)
+    pro_data <- loadParseProteomicsData(cancer = cancer, expression_type = "PRO", sample_type = sample_type, pipeline_type = pipeline_type, norm_type = norm_type)
     pro_data <- data.frame(pro_data)
     
     pro_score <- as.matrix(pro_data[,-1])
@@ -77,7 +85,7 @@ for (i in 1:3) {
     rownames(pro_score) <- pro_data$Gene
     pro_score <- data.frame(pro_score)
     
-    phog_data <- loadParseProteomicsData(cancer = cancer, expresson_type = "collapsed_PHO", sample_type = sample_type, pipeline_type = pipeline_type, norm_type = norm_type)
+    phog_data <- loadParseProteomicsData(cancer = cancer, expression_type = "collapsed_PHO", sample_type = sample_type, pipeline_type = pipeline_type, norm_type = norm_type)
     phog_data <- data.frame(phog_data)
     rownames(phog_data) <- phog_data$Gene
     
@@ -86,7 +94,7 @@ for (i in 1:3) {
     rownames(phog_score) <- phog_data$Gene
     phog_score <- data.frame(phog_score)
     
-    pho_data <- loadParseProteomicsData(cancer = cancer, expresson_type = "PHO", sample_type = sample_type, pipeline_type = pipeline_type, norm_type = norm_type)
+    pho_data <- loadParseProteomicsData(cancer = cancer, expression_type = "PHO", sample_type = sample_type, pipeline_type = pipeline_type, norm_type = norm_type)
     partIDs <- colnames(pho_data); partIDs <- partIDs[!(partIDs %in% c("Gene", "Phosphosite", "Peptide_ID"))]
     pho_data$site_id <- paste0(pho_data$Gene, ".", pho_data$Phosphosite)
     
@@ -126,7 +134,6 @@ for (i in 1:3) {
     esscore_tab <- fread(input = paste0(subdir1, "esscore_tab", "_", cancer, "_", enzyme_type, "_reg_nonNA", reg_nonNA, ".txt"), data.table = F)
     partIDs <- colnames(esscore_tab); partIDs <- partIDs[!(partIDs %in% c("GENE", "SUB_GENE", "SUB_MOD_RSD", "SELF", "pair", "site_id"))]
   }
-  
   fn <- paste0("./cptac2p/analysis_results/phospho_network/es_score/table/calculate_es_pair_score/fisher_stat_tab", "_outlier", outlier_sd, "SD_", cancer, "_", enzyme_type, "_reg_nonNA", reg_nonNA, ".txt")
   if (!file.exists(fn)) {
     ## calculate per row which samples are high outliers to generate outlier status table
@@ -135,6 +142,7 @@ for (i in 1:3) {
     esscore_tab_outlier <- cbind(pairs2generate_head, (esscore_tab_scaled > outlier_sd))
     colnames(esscore_tab_outlier) <- c(colnames(pairs2generate_head), partIDs)
     write.table(x = esscore_tab_outlier, file = paste0(subdir1, "esscore_tab_outlier", outlier_sd, "SD_", cancer, "_", enzyme_type, "_reg_nonNA", reg_nonNA, ".txt"), row.names = F, quote = F, sep = "\t")
+    next()
     
     ## input subtype info and get the subtypes for degsinated order of patient IDs
     if (cancer == "BRCA") {
@@ -210,9 +218,9 @@ for (cancer in c("BRCA", "CO", "UCEC")) {
   }
 }
 fisher_stat_cancers <- unique(fisher_stat_cancers)
-write.table(x = fisher_stat_cancers, file = paste0(makeOutDir(resultD = resultD), 
-                                               "fisher_stat_tab_outlier", outlier_sd, "SD_all_cancers_", enzyme_type, "_reg_nonNA", reg_nonNA, ".txt"), 
+write.table(x = fisher_stat_cancers, file = paste0(makeOutDir(resultD = resultD),
+                                               "fisher_stat_tab_outlier", outlier_sd, "SD_all_cancers_", enzyme_type, "_reg_nonNA", reg_nonNA, ".txt"),
             row.names = F, quote = F, sep = "\t")
 
 fisher_stat_cancers_fdr_sig <- fisher_stat_cancers[fisher_stat_cancers$fdr < 0.05,]
-fisher_stat_cancers_sig <- fisher_stat_cancers[fisher_stat_cancers$p.value < 0.05,]
+fisher_stat_cancers_sig <- fisher_stat_cancers[fisher_stat_cancers$p.value < 0.05 & fisher_stat_cancers$SELF == "trans" & fisher_stat_cancers$num_is.outlier_is.subtype > 4,]

@@ -9,7 +9,7 @@ source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
 source("./cptac2p_analysis/phospho_network/phospho_network_plotting.R")
 library(dplyr)
 
-plotpheatmap <- function(mat_value, color.palette, col_anno, ann_colors) {
+plotpheatmap <- function(mat_value, color.palette, col_anno, ann_colors, width, height) {
   result <- tryCatch({
     my_heatmap <- pheatmap(mat_value, 
                            color = color.palette,
@@ -39,7 +39,7 @@ plotpheatmap <- function(mat_value, color.palette, col_anno, ann_colors) {
   }, finally = {
     save_pheatmap_pdf(x = my_heatmap, 
                       filename = fn, 
-                      width = 20, height = 4)
+                      width = width, height = height)
   })
   return(result)
 }
@@ -81,7 +81,28 @@ fisher_stat_cancers2plot <- fisher_stat_cancers[fisher_stat_cancers$SUB_GENE == 
 pairs2plot <- unique(fisher_stat_cancers2plot$pair)
 # pairs2plot <- c("TP53:ESR1:PRO:MDM2")
 # pairs2plot <- c("AKT1:BAD:S99:PIK3CA:PTEN:PIK3R1", "AKT1:GSK3B:S9:PIK3CA:PTEN", "PTEN:GSK3B:S9:PIK3CA:AKT1")
-pairs2plot <- c("ERBB2:ERBB2:Y1109", "ERBB2:ERBB2:S1083", "CDK1:TP53:S315", "DYRK1A:CCND1:T286", "MAPK9:JUN:S63")
+# pairs2plot <- c("ERBB2:ERBB2:Y1109", "ERBB2:ERBB2:S1083", "CDK1:TP53:S315", "DYRK1A:CCND1:T286", "MAPK9:JUN:S63")
+
+mmr_gene <- read_delim("~/Box Sync/Ding_Lab/Projects_Current/MSI/MSI_shared_data/mmr_gene.txt","\t", escape_double = FALSE, col_names = FALSE,trim_ws = TRUE)
+mmr_gene <- as.vector(mmr_gene$X1)
+pairs2plot <- c(paste0("TP53:MSH2:", paste0(mmr_gene, collapse = ":")))
+
+pairs2plot <- c("PRKD1:CTNNB1:S552")
+
+# pairs2plot <- c("MAPK1:MAPT:S721:MAP3K1:PIK3CA")
+# pairs2plot <- c("MAPK1:MAPT:S721:ESR1")
+pairs2plot <- c("GATA3:EGFR:PRO")
+pairs2plot <- c("PIK3CA:AKT2:Y38")
+pairs2plot <- c("TP53:TP53BP1:S1623:PRO:PLK1:CHEK1:CHEK2:MET:CDK1")
+pairs2plot <- c("TP53:CDK1:PRO")
+pairs2plot <- c("TP53:RB1:S807:CDK1:CDK4")
+pairs2plot <- c("TP53:PLK1:PRO")
+pairs2plot <- c("TP53:CHEK1:PRO")
+pairs2plot <- c("TP53:CHEK2:PRO")
+pairs2plot <- c("TP53:TP53BP1:S1623:PLK1")
+pairs2plot <- c("TP53:TP53BP1:S1623:CDK1")
+pairs2plot <- c("TP53:CTNNB1:PRO")
+
 # bussiness ------------------------------------------------------------------
 for (pair in pairs2plot) {
   geneA <- str_split(string = pair, pattern = ":")[[1]][1]
@@ -93,7 +114,7 @@ for (pair in pairs2plot) {
   
   subdir1 <- paste0(makeOutDir(resultD = resultD), paste(geneA, geneB, phosphosite, sep = "_"), "/")
   dir.create(subdir1)
-  for (cancer in c("UCEC", "BRCA", "CCRCC")) {
+  for (cancer in c("UCEC", "BRCA", "CCRCC", "CO", "OV")) {
     fn <- paste0(subdir1, paste(geneA, geneB, phosphosite, sep = "_"), "_", cancer, "_outlier", outlier_sd, "SD_",  "withlegend.pdf")
     
     if (!file.exists(fn)) {
@@ -103,11 +124,13 @@ for (pair in pairs2plot) {
       ## input mutation matrix
       mut_mat <- fread(paste0("./cptac2p/analysis_results/phospho_network/genoalt/tables/test_mut_impact_proteome/", cancer, "_somatic_mutation.txt"), data.table = F)
       ## mutation needs to show both geneA and geneB
-      mut_mat <- mut_mat[mut_mat$Hugo_Symbol %in% c(geneA, geneB, geneC),]
+      # mut_mat <- mut_mat[mut_mat$Hugo_Symbol %in% c(geneA, geneB, geneC),]
+      mut_mat <- mut_mat[mut_mat$Hugo_Symbol %in% c(geneA, geneB),]
       
       ## input CNA matrix
       cna_tab <- loadCNAstatus(cancer = cancer)
-      cna_tab <- cna_tab[cna_tab$gene %in% c(geneA, geneB, geneC), ]
+      # cna_tab <- cna_tab[cna_tab$gene %in% c(geneA, geneB, geneC), ]
+      cna_tab <- cna_tab[cna_tab$gene %in% c(geneA, geneB), ]
       
       file2input <- paste0("./cptac2p/analysis_results/phospho_network/es_score/table/calculate_es_pair_score/kinase/esscore_tab_", cancer, "_", enzyme_type, "_reg_nonNA", reg_nonNA, ".txt")
       if (file.exists(file2input)) {
@@ -157,7 +180,7 @@ for (pair in pairs2plot) {
         pho_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PHO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "MD")
         phog_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "collapsed_PHO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "MD")
       }
-      pro_tab <- pro_tab[pro_tab$Gene %in% c(geneA, geneB),]
+      pro_tab <- pro_tab[pro_tab$Gene %in% c(geneA, geneB, geneC),]
       pho_tab <- pho_tab[pho_tab$Gene == geneB & pho_tab$Phosphosite == phosphosite,]
       phog_tab <- phog_tab[phog_tab$Gene %in% c(geneA, geneB),]
       
@@ -309,16 +332,16 @@ for (pair in pairs2plot) {
         sup_tab_can <- rbind(sup_tab_can, pho_tab.m[,c("Gene", "Phosphosite", "partID", "exp_value")])
       }
       
-      if (!is.null(phog_tab)) {
-        if (nrow(phog_tab) > 0) {
-          phog_tab.m <- melt(phog_tab, id.vars = "Gene")
-          phog_tab.m %>% head()
-          colnames(phog_tab.m) <- c("Gene", "partID", "exp_value")
-          phog_tab.m$Phosphosite <- "collapsed_PHO"
-          sup_tab_can <- rbind(sup_tab_can, phog_tab.m[,c("Gene", "Phosphosite", "partID", "exp_value")])
-        }
-        
-      }
+      # if (!is.null(phog_tab)) {
+      #   if (nrow(phog_tab) > 0) {
+      #     phog_tab.m <- melt(phog_tab, id.vars = "Gene")
+      #     phog_tab.m %>% head()
+      #     colnames(phog_tab.m) <- c("Gene", "partID", "exp_value")
+      #     phog_tab.m$Phosphosite <- "collapsed_PHO"
+      #     sup_tab_can <- rbind(sup_tab_can, phog_tab.m[,c("Gene", "Phosphosite", "partID", "exp_value")])
+      #   }
+      #   
+      # }
       
       sup_tab_can$id_row <- paste0(sup_tab_can$Gene, "_", sup_tab_can$Phosphosite)
       sup_tab_can$exp_value <- as.numeric(as.vector(sup_tab_can$exp_value))
@@ -340,7 +363,7 @@ for (pair in pairs2plot) {
       mat_value <- mat_value[, partIDs_ordered]
       
       ## order the matrix rows
-      row_order <- c(paste0(rep(c(geneA, geneB), 3), "_", rep(c("RNA", "PRO", "collapsed_PHO"), c(2,2,2))), paste0(geneB, "_", phosphosite))
+      row_order <- c(paste0(rep(c(geneA, geneB, geneC), 3), "_", rep(c("RNA", "PRO", "collapsed_PHO"), c(2,2,2))), paste0(geneB, "_", phosphosite))
       mat_value <- mat_value[intersect(row_order, rownames(mat_value)),]
       
       # plotting ----------------------------------------------------------------
@@ -355,7 +378,7 @@ for (pair in pairs2plot) {
       }
       
 
-      plotpheatmap(mat_value, color.palette, col_anno, ann_colors)
+      plotpheatmap(mat_value, color.palette, col_anno, ann_colors, 20, 10)
 
     }
   }

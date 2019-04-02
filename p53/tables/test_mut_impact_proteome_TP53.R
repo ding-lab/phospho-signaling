@@ -11,6 +11,7 @@ if (wd != baseD) {
   setwd(baseD)
 }
 source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+source("./cptac2p_analysis/p53/TP53_shared.R")
 
 # set variables -----------------------------------------------------------
 sample_type <- "tumor"
@@ -21,16 +22,18 @@ num_genoalt_thres <- 4
 gene_altered <- "TP53"
 # cancer types to process -------------------------------------------------
 # cancers2process <- c("BRCA", "OV", "CO")
-cancers2process <- c("CCRCC")
-cancers2process <- c("BRCA", "CO", "OV", "UCEC", "CCRCC", "LIHC")
-# cancers2process <- c("LIHC")
+# cancers2process <- c("CCRCC")
+# cancers2process <- c("BRCA", "CO", "OV", "UCEC", "CCRCC", "LIHC")
+cancers2process <- c("LIHC")
 # cancers2process <- c("CO")
 
 # expression data to process ----------------------------------------------
-affected_exp_type <- "PHO"
+# affected_exp_type <- "PHO"
 # affected_exp_type <- "PRO"
 # affected_exp_type <- "RNA"
 affected_exp_types2process <- c("RNA", "PRO", "PHO")
+# affected_exp_types2process <- c("PRO", "PHO")
+# affected_exp_types2process <- c("PHO")
 
 # variant types to test ---------------------------------------------------
 ## include all nonsynonymous mutations or just missense/truncation
@@ -39,7 +42,8 @@ affected_exp_types2process <- c("RNA", "PRO", "PHO")
 # variant_class <- "missense"
 # variant_classes2process <- c("truncation", "missense")
 # variant_classes2process <- c("not_silent")
-variant_classes2process <- c("missense", "truncation", "missense")
+# variant_classes2process <- c("missense", "truncation", "not_silent")
+variant_classes2process <- c("truncation")
 
 
 # input enzyme-substrate table --------------------------------------------
@@ -101,7 +105,6 @@ pair_tab <- pair_tab[pair_tab$GENE == "TP53",]
 for (affected_exp_type in affected_exp_types2process) {
   for (variant_class in variant_classes2process) {
     for (cancer in cancers2process) {
-      
       # inputs ------------------------------------------------------------------
       if (cancer %in% c("BRCA", "OV", "CO")) {
         pro_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PRO", sample_type = "tumor", pipeline_type = "CDAP", norm_type = "scaled")
@@ -131,7 +134,8 @@ for (affected_exp_type in affected_exp_types2process) {
       }
       
       ## input mutation matrix
-      mut_mat <- generate_somatic_mutation_matrix(pair_tab = pair_tab, cancer = cancer)
+      maf <- loadMaf(cancer = cancer, maf_files = maf_files)
+      mut_mat <- generate_somatic_mutation_matrix(pair_tab = pair_tab, maf = maf)
       
       ## get the overlap of the participant IDs
       partIDs <- colnames(affected_exp_data)[!(colnames(affected_exp_data) %in% c("gene", "Gene", "Phosphosite", "Peptide_ID"))]
@@ -193,7 +197,9 @@ for (affected_exp_type in affected_exp_types2process) {
         mut_silent_partIDs <- partIDs_in_mut[(mut_mat_en[, partIDs_in_mut] == "Silent")]
         
         # get the patient ids with TP53 deletion -------------------------------------
-        cna_tab <- loadCNAstatus(cancer = cancer)
+        # cna_tab <- loadCNAstatus(cancer = cancer)
+        cna_tab <- loadTP53Deletion(cancer = cancer)
+        
         cna_tab <- cna_tab[cna_tab$gene == gene_altered,]
         partIDs_in_cna <- colnames(cna_tab)[!(colnames(cna_tab) %in% c("gene"))]
         del_partIDs <- partIDs_in_cna[cna_tab[,partIDs_in_cna] == "deletion"]
@@ -264,7 +270,6 @@ for (affected_exp_type in affected_exp_types2process) {
       
     }
   }
-  
 }
 
 
@@ -277,22 +282,43 @@ for (affected_exp_type in c("PRO", "PHO", "RNA")) {
         if (file.exists(fn)) {
           mut_cnv_can <- fread(input = fn, data.table = F, sep = "\t")
           mut_cnv_can$variant_class <- variant_class
-
+          mut_cnv_can$affected_exp_type <- affected_exp_type
           mut_cnv_cans <- rbind(mut_cnv_cans, mut_cnv_can)
-
-
         }
       }
     }
   }
 }
-mut_cnv_cans <- mut_cnv_cans[mut_cnv_cans$num >= num_genoalt_thres,]
+mut_cnv_cans <- mut_cnv_cans[mut_cnv_cans$num >= 5,]
 ## classify role of the gene
 mut_cnv_cans$SUB_GENE.is_downstream <- ifelse(mut_cnv_cans$SUB_GENE %in% tf_pair_tab$SUB_GENE[tf_pair_tab$GENE == gene_altered], T, F)
 mut_cnv_cans$SUB_GENE.is_kinase <- ifelse(mut_cnv_cans$SUB_GENE %in% ptms_site_pairs_sup$GENE[ptms_site_pairs_sup$SUB_GENE == gene_altered & ptms_site_pairs_sup$enzyme_type == "kinase"], T, F)
 mut_cnv_cans$SUB_GENE.is_phosphatase <- ifelse(mut_cnv_cans$SUB_GENE %in% ptms_site_pairs_sup$GENE[ptms_site_pairs_sup$SUB_GENE == gene_altered & ptms_site_pairs_sup$enzyme_type == "phosphatase"], T, F)
 mut_cnv_cans$SUB_GENE.is_complex <- ifelse(mut_cnv_cans$SUB_GENE %in% complex_pair_tab$SUB_GENE[complex_pair_tab$GENE == gene_altered], T, F)
 mut_cnv_cans$SUB_GENE.is_complex_corum <- ifelse(mut_cnv_cans$SUB_GENE %in% corum_tab$geneB[corum_tab$geneA == gene_altered], T, F)
+mut_cnv_cans$fdr <- FDR_by_id_columns(p_vector = mut_cnv_cans$p, id_columns = c("affected_exp_type", "SELF", "cancer", "variant_class", "SUB_GENE.is_downstream", "SUB_GENE.is_kinase", "SUB_GENE.is_phosphatase", "SUB_GENE.is_complex_corum"), df = mut_cnv_cans)
+
+## annotate the significant events that are unique to missense or truncation
+mut_cnv_cans <- mut_cnv_cans %>%
+  mutate(pair_pro = paste0(pair, ":", cancer)) %>%
+  mutate(fdr_sig = (fdr < 0.05))
+
+mut_cnv_cans$is_uniq.variant_class <- FALSE
+for (variant_class_tmp in c("truncation", "missense")) {
+  row_tmp <- (mut_cnv_cans$variant_class == variant_class_tmp)
+  row_tmp2compare <- !(mut_cnv_cans$variant_class %in% c("not_silent", variant_class_tmp))
+  mut_cnv_cans$is_uniq.variant_class[row_tmp] <- mut_cnv_cans$fdr_sig[row_tmp] & (mut_cnv_cans$pair_pro[row_tmp] %in% mut_cnv_cans$pair_pro[row_tmp2compare]) & !(mut_cnv_cans$pair_pro[row_tmp] %in% mut_cnv_cans$pair_pro[row_tmp2compare & mut_cnv_cans$fdr_sig])
+}
 
 write.table(x = mut_cnv_cans, file = paste0(makeOutDir(resultD = resultD), gene_altered, "_mut_impact_proteome_RNA_cptac2p_cptac3_tab.txt"), sep = "\t", row.names = F, quote = F)
 
+# mut_cnv_cans %>%
+#   head()
+#   
+# mut_cnv_cans %>%
+#   filter(cancer == "LIHC") %>%
+#   filter(variant_class == "truncation") %>%
+#   select(affected_exp_type) %>%
+#   unique
+
+disease_associated_sites <- fread("./Ding_Lab/Projects_Current/CPTAC/pan3can_shared_data/Phospho_databases/PhosphositePlus/Mar_04_2019/Disease-associated_sites", data.table = F)

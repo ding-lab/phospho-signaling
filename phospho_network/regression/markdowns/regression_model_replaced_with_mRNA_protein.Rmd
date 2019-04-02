@@ -1,0 +1,286 @@
+---
+title: "compare with different model"
+output: html_document
+---
+
+## source
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+library(knitr)
+opts_knit$set(root.dir = baseD)
+setwd(baseD)
+source('./cptac2p_analysis/preprocess_files/preprocess_files_shared.R')
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+```
+
+## set variables
+``` {r variables}
+cancers2process <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
+```
+
+
+
+## inputs
+``` {r input-ks-table}
+omnipath_tab <- load_omnipath()
+omnipath_tab <- annotate_enzyme_type(regression = omnipath_tab, kinases = kinases, phosphatases = phosphatases)
+omnipath_tab %>%
+  filter(enzyme_type != "") %>%
+  filter(!(Source %in% c("NetKIN", "PhosphoNetworks", "MIMP"))) %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow()
+
+omnipath_tab %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(!(Source %in% c("NetKIN", "PhosphoNetworks", "MIMP"))) %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow()
+
+psp_tab %>%
+  filter(as.vector(GENE) == as.vector(SUB_GENE)) %>%
+  filter(!(pair_pro %in% omnipath_tab$pair_pro)) %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow()
+39+6218
+```
+
+```{r input-regression-and-clean-up}
+regression <- fread(input = paste0(ppnD, "regression/tables/annotate_regression_with_mut_impact/", 
+                                   "regression_cptac2p_cptac3_tumor_reg_nonNA20_mut_impact_cancer_specificity_annotated.txt"),
+                    data.table = F)
+reg_sig <- c(0.05, 0.05); names(reg_sig) <- c("kinase", "phosphatase")
+regression %>% nrow()
+regression <- regression %>%
+  filter(regression$pair_pro %in% omnipath_tab$pair_pro[!(omnipath_tab$Source %in% c("NetKIN", "PhosphoNetworks", "MIMP"))])
+regression %>% nrow()
+
+# regression <- change_regression_nonNA(regression = regression, reg_nonNA = 20, reg_sig = reg_sig)
+regression <- adjust_regression_by_nonNA(regression = regression, reg_nonNA = 20, reg_sig = reg_sig)
+
+table(regression$Cancer)
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(regulated == T) %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow
+
+regression %>%
+  filter(SELF == "trans") %>%
+    filter(regulated == T) %>%
+  filter(enzyme_type == "kinase") %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "kinase") %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "kinase") %>%
+  tail()
+
+regression %>%
+  filter(regulated == T) %>%
+  select(pair_pro_cancer) %>%
+  unique() %>%
+  nrow
+
+regression %>%
+  filter(regulated == T) %>%
+  select(pair_pro_cancer) %>%
+  unique() %>%
+  nrow
+
+# 
+# regression %>%
+#   filter(GENE == "AKT1" & SUB_GENE == "GSK3B")
+# 
+# regression %>%
+#   filter(GENE == "IKBKB" & SUB_GENE == "TP53")
+# 
+# regression %>%
+#   filter(GENE == "RPTOR")
+# 
+# regression %>%
+#   filter(GENE == "MTOR" & SUB_GENE == "EIF4EBP1")
+
+```
+
+```{r overlap-with-known-site}
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(!is.na(Source)) %>%
+  filter(!(Source %in% c("NetKIN", "PhosphoNetworks", "MIMP"))) %>%
+  select(pair) %>%
+  unique() %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(!is.na(Source)) %>%
+  filter(!(Source %in% c("NetKIN", "PhosphoNetworks", "MIMP"))) %>%
+  filter(regulated == T) %>%
+  select(pair) %>%
+  unique() %>%
+  nrow()
+
+regression <- annotate_ks_source(regression = regression)
+fisher_tab <- data.frame(pair = unique(regression$pair[regression$SELF == "trans" & regression$enzyme_type == "kinase"]))
+fisher_tab$is_direct <- (fisher_tab$pair %in% regression$pair[regression$is.direct])
+fisher_tab$regulated <- (fisher_tab$pair %in% regression$pair[regression$regulated])
+
+fisher.test(table(fisher_tab[, c("is_direct", "regulated")]))
+```
+
+## compare with different models
+```{r input-mRNA_sub~mRNA_pho-results}
+regression_mRNA <- fread(input = "./cptac2p/analysis_results/phospho_network/regression/tables/gather_regression_model_replaced_with_protein_mRNA/regression_mRNA_sub~mRNA_kin_cptac2p_cptac3_tumor.txt", data.table = F)
+
+regression_mRNA %>%
+  filter(regulated == T) %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow
+
+regression_mRNA %>%
+  filter(regulated == T) %>%
+  tail()
+
+regression_mRNA_sig_pair_pro_cancer <- regression_mRNA %>%
+  filter(regulated == T) %>%
+  mutate(pair_pro_cancer = paste0(pair_pro, ":", Cancer)) %>%
+  select(pair_pro_cancer) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(regulated == T) %>%
+  select(pair_pro_cancer) %>%
+  filter((pair_pro_cancer %in% regression_mRNA_sig_pair_pro_cancer$pair_pro_cancer)) %>%
+  unique() %>%
+  nrow
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(regulated == T) %>%
+  select(pair_pro_cancer) %>%
+  filter(!(pair_pro_cancer %in% regression_mRNA_sig_pair_pro_cancer$pair_pro_cancer)) %>%
+  unique() %>%
+  nrow
+
+```
+
+```{r input-pro_sub~pro_pho-results}
+regression_pro <- fread(input = "./cptac2p/analysis_results/phospho_network/regression/tables/gather_regression_model_replaced_with_protein_mRNA/regression_pro_sub~pro_kin_cptac2p_cptac3_tumor.txt", data.table = F)
+
+regression_pro %>%
+  filter(regulated == T) %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow
+
+regression_pro %>%
+  filter(regulated == T) %>%
+  tail()
+
+regression_pro_sig_pair_pro_cancer <- regression_pro %>%
+  filter(regulated == T) %>%
+  mutate(pair_pro_cancer = paste0(pair_pro, ":", Cancer)) %>%
+  select(pair_pro_cancer) %>%
+  unique()
+
+regression %>%
+  filter(regulated == T) %>%
+  select(pair_pro_cancer) %>%
+  filter((pair_pro_cancer %in% regression_pro_sig_pair_pro_cancer$pair_pro_cancer)) %>%
+  unique() %>%
+  nrow
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(regulated == T) %>%
+  select(pair_pro_cancer) %>%
+  filter(!(pair_pro_cancer %in% regression_pro_sig_pair_pro_cancer$pair_pro_cancer)) %>%
+  filter(!(pair_pro_cancer %in% regression_mRNA_sig_pair_pro_cancer$pair_pro_cancer)) %>%
+  unique() %>%
+  nrow
+1606/1837
+```
+
+```{r input-pho_sub~pro_pho-results}
+regression_pro_kin <- fread(input = "./cptac2p/analysis_results/phospho_network/regression/tables/gather_regression_model_replaced_with_protein_mRNA/regression_pho_sub~pro_sub+pro_kin_cptac2p_cptac3_tumor.txt", data.table = F)
+
+regression_pro_kin %>%
+  filter(regulated == T) %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow
+
+regression_pro_kin %>%
+  filter(regulated == T) %>%
+  tail()
+
+regression_pro_kin_sig_pair_pro_cancer <- regression_pro_kin %>%
+  filter(regulated == T) %>%
+  mutate(pair_pro_cancer = paste0(pair_pro, ":", Cancer)) %>%
+  select(pair_pro_cancer) %>%
+  unique()
+
+regression %>%
+  filter(regulated == T) %>%
+  select(pair_pro_cancer) %>%
+  filter((pair_pro_cancer %in% regression_pro_kin_sig_pair_pro_cancer$pair_pro_cancer)) %>%
+  unique() %>%
+  nrow
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(regulated == T) %>%
+  select(pair_pro_cancer) %>%
+  filter(!(pair_pro_cancer %in% regression_pro_kin_sig_pair_pro_cancer$pair_pro_cancer)) %>%
+  filter(!(pair_pro_cancer %in% regression_pro_sig_pair_pro_cancer$pair_pro_cancer)) %>%
+  filter(!(pair_pro_cancer %in% regression_mRNA_sig_pair_pro_cancer$pair_pro_cancer)) %>%
+  unique() %>%
+  nrow
+1426/1837
+```
+
+
+## simulated pairs
+
+```{r input-simulated-pairs}
+regression_simulated <- fread(input = "./cptac2p/analysis_results/phospho_network/regression/tables/gather_regression_simulated/regression_simulated_PPI_cptac2p_cptac3_tumor.txt", data.table = F)
+regression_simulated <- regression_simulated %>%
+  mutate(pair_pro_cancer = paste0(pair_pro, ":", Cancer))
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter((pair_pro_cancer %in% regression_simulated$pair_pro_cancer))
+
+col2merge <- intersect(colnames(regression_simulated), colnames(regression))
+regression_simulated_ks <- rbind(regression_simulated[, col2merge], regression[,col2merge])
+regression_simulated_ks <- adjust_regression_by_nonNA(regression = regression_simulated_ks, reg_nonNA = 20, reg_sig = reg_sig)
+
+fisher_tab <- data.frame(pair_pro = unique(regression_simulated_ks$pair_pro))
+fisher_tab$regulated <- (fisher_tab$pair_pro %in% regression_simulated_ks$pair_pro[regression_simulated_ks$regulated])
+fisher_tab$is.simulated <- (fisher_tab$pair_pro %in% regression_simulated$pair_pro)
+
+table(fisher_tab[, c("regulated", "is.simulated")])
+
+fisher.test(table(fisher_tab[, c("regulated", "is.simulated")]), alternative = "less")
+```
+
+

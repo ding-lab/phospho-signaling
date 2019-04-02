@@ -6,6 +6,8 @@
 # source ------------------------------------------------------------------
 setwd(dir = "~/Box Sync/")
 source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+source("./cptac2p_analysis/p53/TP53_shared.R")
+
 if(!("pheatmap" %in% installed.packages()[,"Package"])) {
   install.packages("pheatmap")
 }
@@ -30,20 +32,21 @@ gene <- "TP53"
 
 
 # inputs ------------------------------------------------------------------
-
-## input by cancer
-sup_tab <- NULL
-# for (cancer in c("BRCA", "OV", "CO", "CCRCC", "UCEC", "LIHC")) {
-for (cancer in c("LIHC")) {
+for (cancer in c("BRCA", "OV", "CO", "CCRCC", "UCEC", "LIHC")) {
+# for (cancer in c("BRCA")) {
+  sup_tab <- NULL
   ## input mutation matrix
-  fn <- paste0("./cptac2p/analysis_results/phospho_network/genoalt/tables/test_mut_impact_proteome/", cancer, "_somatic_mutation.txt")
-  mut_mat <- read_delim(file = fn, "\t", escape_double = FALSE, trim_ws = TRUE)
-  mut_mat <- data.frame(mut_mat)
-  mut_mat <- mut_mat[mut_mat$Hugo_Symbol == gene,]
-  mut_mat
+  # fn <- paste0("./cptac2p/analysis_results/phospho_network/genoalt/tables/test_mut_impact_proteome/", cancer, "_somatic_mutation.txt")
+  # mut_mat <- read_delim(file = fn, "\t", escape_double = FALSE, trim_ws = TRUE)
+  # mut_mat <- data.frame(mut_mat)
+  # mut_mat <- mut_mat[mut_mat$Hugo_Symbol == gene,]
+  maf <- loadMaf(cancer = cancer, maf_files = maf_files)
+  mut_mat <- generate_somatic_mutation_matrix(pair_tab = gene, maf = maf)
   
   ## input CNA matrix
-  cna_tab <- loadCNAstatus(cancer = cancer)
+  # cna_tab <- loadCNAstatus(cancer = cancer)
+  cna_tab <- loadTP53Deletion(cancer = cancer)
+  
   cna_tab <- cna_tab[cna_tab$gene == gene,]
   cna_tab %>% head()
   cna_tab.m <- melt(cna_tab, id.vars = "gene")
@@ -133,26 +136,19 @@ for (cancer in c("LIHC")) {
   
   ## bind with super table
   sup_tab$cancer <- cancer
-}
-sup_tab %>% head()
-sup_tab %>% tail()
-
-# Plot heatmap ------------------------------------------------------------
-sup_tab$id_row <- paste0(sup_tab$Gene, "_", sup_tab$Phosphosite)
-cap <- 3
-sup_tab$exp_value_capped <- sup_tab$exp_value
-sup_tab$exp_value_capped[sup_tab$exp_value > cap] <- cap
-sup_tab$exp_value_capped[sup_tab$exp_value < (-cap)] <- (-cap)
-breaks = seq(-(cap),cap, by=0.2)
-
-## delete phosphosites with too much NAs
-sup_tab <- sup_tab[sup_tab$Phosphosite %in% c("RNA", "PRO", "S315", "S392"),]
-# sup_tab <- sup_tab[sup_tab$Phosphosite %in% c("PRO", "S315"),]
-expression2plot <- c("RNA", "PRO", "S315", "S392")
-for (cancer in c("LIHC")) {
   
-# for (cancer in c("BRCA", "OV", "CO", "UCEC", "CCRCC")) {
-  sup_tab <- sup_tab[sup_tab$cancer == cancer,]
+  ## delete phosphosites with too much NAs
+  sup_tab <- sup_tab[sup_tab$Phosphosite %in% c("RNA", "PRO", "S315", "S392"),]
+  # sup_tab <- sup_tab[sup_tab$Phosphosite %in% c("PRO", "S315"),]
+  expression2plot <- c("RNA", "PRO", "S315", "S392")
+  
+  # Plot heatmap ------------------------------------------------------------
+  sup_tab$id_row <- paste0(sup_tab$Gene, "_", sup_tab$Phosphosite)
+  cap <- 3
+  sup_tab$exp_value_capped <- sup_tab$exp_value
+  sup_tab$exp_value_capped[sup_tab$exp_value > cap] <- cap
+  sup_tab$exp_value_capped[sup_tab$exp_value < (-cap)] <- (-cap)
+  breaks = seq(-(cap),cap, by=0.2)
   
   ## make the matrix for the heatmap body
   # df_value <- dcast(data = sup_tab, id_row ~ partID, value.var = "exp_value_capped")
@@ -214,18 +210,16 @@ for (cancer in c("LIHC")) {
   }
   
   
-
-
-  my_heatmap <- pheatmap(mat_value, 
-                         color = color.palette,
-                         annotation_col = col_anno,
-                         scale = "row",
-                         na_col = "white", 
-                         cluster_rows=F, cluster_cols=F, show_colnames = F, annotation_colors = ann_colors)
+  # 
+  # my_heatmap <- pheatmap(mat_value, 
+  #                        color = color.palette,
+  #                        annotation_col = col_anno,
+  #                        scale = "row",
+  #                        na_col = "white", 
+  #                        cluster_rows=F, cluster_cols=F, show_colnames = F, annotation_colors = ann_colors)
+  # 
+  # save_pheatmap_pdf(x = my_heatmap, 
+  #                   filename = paste0(makeOutDir(resultD = resultD), "TP53_", cancer, "_overview_withlegend.pdf"), 
+  #                   width = 20, height = 4)
   
-  save_pheatmap_pdf(x = my_heatmap, 
-                    filename = paste0(makeOutDir(resultD = resultD), "TP53_", cancer, "_overview_withlegend.pdf"), 
-                    width = 20, height = 4)
-  
-
 }

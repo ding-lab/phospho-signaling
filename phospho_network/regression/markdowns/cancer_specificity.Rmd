@@ -1,0 +1,534 @@
+---
+title: "Cancer specificity"
+output: html_document
+---
+
+## source
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+library(knitr)
+opts_knit$set(root.dir = baseD)
+setwd(baseD)
+source('./cptac2p_analysis/preprocess_files/preprocess_files_shared.R')
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+```
+
+## set variables
+``` {r variables}
+cancers2process <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
+enzyme_types2process <- c("kinase", "phosphatase")
+```
+
+
+
+## inputs
+``` {r input-ks-table}
+omnipath_tab <- load_omnipath()
+```
+
+```{r input-regression-and-annotate}
+fdr_thres <- 0.05
+size <- 83
+file_path_tmp <- paste0("./cptac2p/analysis_results/phospho_network/regression/tables/generate_regression_regulated_uniq_marked/",  "regression_size", size, "_FDR", fdr_thres, "_detected_in_", paste0(cancers2process, collapse = "_"),".txt")
+file_path_tmp
+regression <- fread(input = file_path_tmp, data.table = F)
+table(regression$regulated_uniq)
+```
+
+## cis
+```{r cis-overview}
+regression %>%
+  filter(SELF == "cis") %>%
+  filter(regulated == T) %>%
+  select(pair) %>%
+  table() %>%
+  sort()
+```
+
+## write out list of kinases and substrates that are uniquely correlated in a particular cancer type
+``` {r write-out-genes-uniq}
+for (cancer_tmp in cancers2process) {
+  regulated_uniq_kinases <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated_uniq == T) %>%
+    select(GENE) %>%
+    unique()
+  
+  write.table(x = regulated_uniq_kinases$GENE, file = paste0(makeOutDir(resultD = resultD), cancer_tmp, "_regulated_uniq_kinases.txt"), quote = F, row.names = F, col.names = F)
+  
+  regulated_kinases <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated == T) %>%
+    select(GENE) %>%
+    unique()
+  write.table(x = regulated_kinases$GENE, file = paste0(makeOutDir(resultD = resultD), cancer_tmp, "_regulated_kinases.txt"), quote = F, row.names = F, col.names = F)
+  
+  regulated_uniq_substrates <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated_uniq == T) %>%
+    select(SUB_GENE) %>%
+    unique()
+  write.table(x = regulated_uniq_substrates$SUB_GENE, file = paste0(makeOutDir(resultD = resultD), cancer_tmp, "_regulated_uniq_substrates.txt"), quote = F, row.names = F, col.names = F)
+  
+  
+  file2w <- unique(c(regulated_uniq_kinases$GENE, regulated_uniq_substrates$SUB_GENE))
+  write.table(x = file2w, file = paste0(makeOutDir(resultD = resultD), cancer_tmp, "_regulated_uniq_kinases_and_substrates.txt"), quote = F, row.names = F, col.names = F)
+  
+  regulated_substrates <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated == T) %>%
+    select(SUB_GENE) %>%
+    unique()
+  write.table(x = regulated_substrates$SUB_GENE, file = paste0(makeOutDir(resultD = resultD), cancer_tmp, "_regulated_substrates.txt"), quote = F, row.names = F, col.names = F)
+  
+  
+  file2w <- unique(c(regulated_kinases$GENE, regulated_substrates$SUB_GENE))
+  write.table(x = file2w, file = paste0(makeOutDir(resultD = resultD), cancer_tmp, "_regulated_kinases_and_substrates.txt"), quote = F, row.names = F, col.names = F)
+  
+}
+
+```
+
+``` {r test-essential-genes-BRCA}
+for (cancer_tmp in "BRCA") {
+  essential_gene_tab <- read_csv("../Downloads/breast.csv")
+  
+  regulated_uniq_kinases <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated_uniq == T) %>%
+    select(GENE) %>%
+    unique()
+  
+  
+  
+  regulated_kinases <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated == T) %>%
+    select(GENE) %>%
+    unique()
+  
+  
+  regulated_uniq_substrates <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated_uniq == T) %>%
+    select(SUB_GENE) %>%
+    unique()
+  
+  
+  uniq_genes <- unique(c(regulated_uniq_kinases$GENE, regulated_uniq_substrates$SUB_GENE))
+  
+  regulated_substrates <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated == T) %>%
+    select(SUB_GENE) %>%
+    unique()
+  
+  regulated_genes <- unique(c(regulated_kinases$GENE, regulated_substrates$SUB_GENE))
+  
+  
+  fisher_stat_tmp <- fisher.test((regulated_substrates$SUB_GENE %in% regulated_uniq_substrates$SUB_GENE), (regulated_substrates$SUB_GENE %in% essential_gene_tab$Symbols))
+  print(fisher_stat_tmp)
+  
+  fisher_stat_tmp <- fisher.test((regulated_kinases$GENE %in% regulated_uniq_kinases$GENE), (regulated_kinases$GENE %in% essential_gene_tab$Symbols))
+  print(fisher_stat_tmp)
+  
+  fisher_stat_tmp <- fisher.test((regulated_genes %in% uniq_genes), (regulated_genes %in% essential_gene_tab$Symbols))
+  print(fisher_stat_tmp)
+  
+}
+
+```
+
+``` {r test-essential-genes-OV}
+for (cancer_tmp in "OV") {
+  essential_gene_tab <- read_csv("../Downloads/ovarian.csv")
+  
+  regulated_uniq_kinases <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated_uniq == T) %>%
+    select(GENE) %>%
+    unique()
+  
+  
+  
+  regulated_kinases <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated == T) %>%
+    select(GENE) %>%
+    unique()
+  
+  
+  regulated_uniq_substrates <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated_uniq == T) %>%
+    select(SUB_GENE) %>%
+    unique()
+  
+  
+  uniq_genes <- unique(c(regulated_uniq_kinases$GENE, regulated_uniq_substrates$SUB_GENE))
+  
+  regulated_substrates <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated == T) %>%
+    select(SUB_GENE) %>%
+    unique()
+  
+  regulated_genes <- unique(c(regulated_kinases$GENE, regulated_substrates$SUB_GENE))
+  
+  
+  fisher_stat_tmp <- fisher.test((regulated_substrates$SUB_GENE %in% regulated_uniq_substrates$SUB_GENE), (regulated_substrates$SUB_GENE %in% essential_gene_tab$Symbols))
+  print(fisher_stat_tmp)
+  
+  fisher_stat_tmp <- fisher.test((regulated_kinases$GENE %in% regulated_uniq_kinases$GENE), (regulated_kinases$GENE %in% essential_gene_tab$Symbols))
+  print(fisher_stat_tmp)
+  
+  fisher_stat_tmp <- fisher.test((regulated_genes %in% uniq_genes), (regulated_genes %in% essential_gene_tab$Symbols))
+  print(fisher_stat_tmp)
+  
+}
+
+```
+
+``` {r test-essential-genes-CO}
+for (cancer_tmp in "CO") {
+  essential_gene_tab <- read_csv("../Downloads/colon.csv")
+  
+  regulated_uniq_kinases <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated_uniq == T) %>%
+    select(GENE) %>%
+    unique()
+  
+  
+  
+  regulated_kinases <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated == T) %>%
+    select(GENE) %>%
+    unique()
+  
+  
+  regulated_uniq_substrates <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated_uniq == T) %>%
+    select(SUB_GENE) %>%
+    unique()
+  
+  
+  uniq_genes <- unique(c(regulated_uniq_kinases$GENE, regulated_uniq_substrates$SUB_GENE))
+  
+  regulated_substrates <- regression %>%
+    filter(Cancer == cancer_tmp) %>%
+    filter(regulated == T) %>%
+    select(SUB_GENE) %>%
+    unique()
+  
+  regulated_genes <- unique(c(regulated_kinases$GENE, regulated_substrates$SUB_GENE))
+  
+  
+  fisher_stat_tmp <- fisher.test((regulated_substrates$SUB_GENE %in% regulated_uniq_substrates$SUB_GENE), (regulated_substrates$SUB_GENE %in% essential_gene_tab$Symbols))
+  print(fisher_stat_tmp)
+  
+  fisher_stat_tmp <- fisher.test((regulated_kinases$GENE %in% regulated_uniq_kinases$GENE), (regulated_kinases$GENE %in% essential_gene_tab$Symbols))
+  print(fisher_stat_tmp)
+  
+  fisher_stat_tmp <- fisher.test((regulated_genes %in% uniq_genes), (regulated_genes %in% essential_gene_tab$Symbols))
+  print(fisher_stat_tmp)
+  
+}
+
+```
+
+
+## CCRCC
+```{r MTOR}
+regression %>%
+  filter(FDR_pho_kin < 0.1 & coef_pho_kin > 0 & GENE == "MTOR")  %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(FDR_pho_kin < 0.1 & SUB_GENE == "EIF4EBP1")  %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin)
+
+```
+
+```{r CCRCC-uniq}
+cancer_tmp <- "CCRCC"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% SMGs[[cancer_tmp]])  %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(SUB_GENE %in% SMGs[[cancer_tmp]])  %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+
+```
+
+```{r CCRCC-MAPKAPK2}
+cancer_tmp <- "CCRCC"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(regulated_uniq == T) %>%
+  filter(FDR_pho_kin < 0.05) %>%
+  filter(!is.na(Source)) %>%
+  arrange(GENE, FDR_pho_kin) %>%
+  select(pair,  Source, coef_pho_kin, FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("MAPKAPK2"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("LYN"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("EGFR"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("ROCK1"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("MAPK1"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("ROCK1"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+```
+## OV
+```{r OV-top-kinases}
+cancer_tmp <- "OV"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(regulated_uniq == T) %>%
+  filter(FDR_pho_kin < 0.05) %>%
+  filter(!is.na(Source)) %>%
+  arrange(GENE, FDR_pho_kin) %>%
+  select(pair,  Source, coef_pho_kin, FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("PAK2"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("MAPK1"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("CDK1"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+```
+
+```{r OV-uniq}
+cancer_tmp <- "OV"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% SMGs[[cancer_tmp]])  %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(SUB_GENE %in% SMGs[[cancer_tmp]])  %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regulated_uniq_kinases <- regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(regulated_uniq == T) %>%
+  select(GENE) %>%
+  unique()
+write.table(x = regulated_uniq_kinases$GENE, file = paste0(makeOutDir(resultD = resultD), cancer_tmp, "_regulated_uniq_kinases.txt"), quote = F, row.names = F, col.names = F)
+
+regulated_kinases <- regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(regulated == T) %>%
+  select(GENE) %>%
+  unique()
+write.table(x = regulated_kinases$GENE, file = paste0(makeOutDir(resultD = resultD), cancer_tmp, "_regulated_kinases.txt"), quote = F, row.names = F, col.names = F)
+
+```
+
+
+```{r CO-uniq}
+cancer_tmp <- "CO"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% SMGs[[cancer_tmp]])  %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(SUB_GENE %in% SMGs[[cancer_tmp]])  %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+```
+## UCEC
+
+```{r UCEC-uniq}
+cancer_tmp <- "UCEC"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% SMGs[[cancer_tmp]])  %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(SUB_GENE %in% SMGs[[cancer_tmp]])  %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+```
+
+```{r UCEC-top-kinases}
+cancer_tmp <- "UCEC"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(regulated_uniq == T) %>%
+  filter(FDR_pho_kin < 0.05) %>%
+  filter(!is.na(Source)) %>%
+  arrange(GENE, FDR_pho_kin) %>%
+  select(pair,  Source, coef_pho_kin, FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("PAK2"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("MAPK1"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("CDK1"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+```
+
+
+## BRCA
+```{r BRCA-uniq}
+cancer_tmp <- "BRCA"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% SMGs[[cancer_tmp]])  %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(SUB_GENE %in% SMGs[[cancer_tmp]])  %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+```
+
+```{r BRCA-top-kinases}
+cancer_tmp <- "BRCA"
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(regulated_uniq == T) %>%
+  filter(FDR_pho_kin < 0.05) %>%
+  filter(!is.na(Source)) %>%
+  arrange(GENE, FDR_pho_kin) %>%
+  select(pair,  Source, coef_pho_kin, FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("PAK2"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("MAPK1"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+
+regression %>%
+  filter(Cancer == cancer_tmp) %>%
+  filter(GENE %in% c("CDK1"))  %>%
+  filter(!is.na(Source)) %>%
+  filter(regulated_uniq == T) %>%
+  select(pair, Cancer, Source, regulated_uniq, coef_pho_kin, FDR_pho_kin) %>%
+  arrange(FDR_pho_kin)
+```

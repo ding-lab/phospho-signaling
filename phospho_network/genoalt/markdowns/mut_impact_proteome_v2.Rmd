@@ -1,0 +1,1080 @@
+---
+title: "Untitled"
+output: html_document
+---
+## source
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+require(knitr)
+opts_knit$set(root.dir = baseD)
+setwd(baseD)
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+```
+
+## inputs
+``` {r vairiables}
+num_genoalt_thres <- 4
+cancers2proces <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
+```
+
+``` {r input-mut-impact-tab}
+mut_impact_tab <- load_mut_impact_proteome()
+mut_impact_tab <- mut_impact_tab %>%
+  filter(cancer %in% cancers2proces) %>%
+  filter(SUB_GENE.is_kinase | SUB_GENE.is_phosphatase | SUB_GENE.is_substrate | SELF == "cis") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(num >= num_genoalt_thres)
+mut_impact_tab %>% nrow()
+```
+
+## how mutations associate with kinase/substrate abundance levels
+### cis effect
+``` {r cis}
+mut_impact_tab %>%
+  filter(SELF == "cis") %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "cis") %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+
+## % associated
+mut_impact_tab %>%
+  filter(SELF == "cis", p < 0.05) %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+
+## % associated
+mut_impact_tab %>%
+  filter(SELF == "cis", fdr < 0.05) %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "cis", fdr < 0.05) %>%
+  arrange(fdr)
+
+## kinases %
+mut_impact_tab %>%
+  filter(SELF == "cis", p < 0.05) %>%
+  filter(GENE %in% kinases) %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "cis", fdr < 0.05) %>%
+  filter(GENE %in% kinases) %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+```
+
+``` {r}
+mut_impact_tab %>%
+  filter(SELF == "cis", fdr < 0.05) %>%
+  # select(pair, cancer,  variant_class, fdr, meddiff) %>%
+  filter(affected_exp_type %in% affected_exp_types2process) %>%
+  arrange(fdr) %>%
+  select(pair_pro_cancer) %>%
+  unique
+```
+
+``` {r}
+## kinases %
+mut_impact_tab %>%
+  filter(SELF == "cis", p < 0.05) %>%
+  filter(GENE %in% phosphatases) %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "cis", fdr < 0.05) %>%
+  filter(GENE %in% phosphatases) %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "cis", fdr < 0.05) %>%
+    filter(GENE %in% phosphatases)
+```
+#### affect protein
+``` {r cis-protein}
+mut_impact_tab %>%
+  filter(SELF == "cis") %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "cis", p < 0.05) %>%
+  filter(affected_exp_type == "PRO") %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+```
+
+#### affect phospho
+``` {r cis-phospho}
+mut_impact_tab %>%
+  filter(SELF == "cis") %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "cis", p < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "cis", p < 0.05) %>%
+  filter(affected_exp_type == "PHO") %>%
+  filter(!(pair_pro_cancer %in% mut_impact_tab$pair_pro_cancer[mut_impact_tab$p < 0.05 & mut_impact_tab$affected_exp_type == "PRO"])) %>%
+    filter((pair_pro_cancer %in% mut_impact_tab$pair_pro_cancer[mut_impact_tab$affected_exp_type == "PRO"])) %>%
+  select(GENE, cancer) %>%
+  unique() %>%
+  nrow()
+```
+
+``` {r cis-affect-phospho-without-pro-change}
+mut_impact_pho_tab <- merge(mut_impact_tab[mut_impact_tab$SUB_MOD_RSD != "PRO",],
+                          mut_impact_tab[mut_impact_tab$SUB_MOD_RSD == "PRO", 
+                                         c("fdr", "GENE", "SUB_GENE", "cancer", "variant_class", 
+                                           "num", "num_control", "p", "meddiff")],
+                          by = c("GENE", "SUB_GENE","cancer", "variant_class"), all.x = T, suffixes = c("", ".pro"))
+
+
+mut_impact_pho_tab %>%
+  filter(affected_exp_type %in% affected_exp_types2process) %>%
+  filter(SELF == "cis") %>%
+  filter(p < 0.05) %>%
+  filter(p.pro > 0.05) %>%
+  filter(variant_class == "missense") %>%
+  # filter(GENE %in% unlist(SMGs)) %>%
+  select(pair, cancer, pair, variant_class, 
+         fdr, meddiff, num, p,
+         fdr.pro, meddiff.pro, num.pro, p.pro) %>%
+  arrange(fdr)
+
+mut_impact_pho_tab %>%
+  filter(affected_exp_type %in% affected_exp_types2process) %>%
+  filter(SELF == "cis") %>%
+  filter(fdr < 0.05) %>%
+  # filter(p < 0.05) %>%
+  filter(p.pro < 0.05) %>%
+  # filter(GENE %in% unlist(SMGs)) %>%
+  select(pair, cancer, pair, variant_class, 
+         fdr, meddiff, num, p,
+         fdr.pro, meddiff.pro, num.pro, p.pro) %>%
+  arrange(fdr)
+
+mut_impact_pho_tab %>%
+  filter(affected_exp_type %in% affected_exp_types2process) %>%
+  filter(SELF == "cis") %>%
+  filter(p < 0.05) %>%
+  filter(p.pro < 0.05) %>%
+  mutate(pair_cancer = paste0(pair, ":", cancer)) %>%
+  filter(pair_cancer %in% regression$pair_cancer[regression$regulated]) %>%
+  select(pair, cancer, pair, variant_class, 
+         fdr, meddiff, num, p,
+         fdr.pro, meddiff.pro, num.pro, p.pro) %>%
+  arrange(fdr)
+
+regression %>%
+  filter(pair == "MAP3K1:MAP3K1:S250")
+
+```
+### trans effect
+``` {r trans-P-sig}
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  select(pair_pro_cancer) %>%
+  unique() %>%
+  nrow()
+1744/9214
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(p < 0.05) %>%
+  select(pair_pro_cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(fdr < 0.05) %>%
+  select(pair_pro_cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(p < 0.05) %>%
+  # filter(num >= 10) %>%
+  filter(GENE %in% unlist(SMGs)) %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(p < 0.05) %>%
+  # filter(num >= 10) %>%
+  filter(GENE %in% unlist(SMGs)) %>%
+  select(SUB_GENE) %>%
+  unique() %>%
+  nrow()
+
+pair_pro_reoccur <- mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(p < 0.05) %>%
+  select(pair_pro_cancer, pair_pro, GENE, SUB_GENE) %>%
+  unique() %>%
+  select(pair_pro, GENE, SUB_GENE) %>%
+  table() %>%
+  data.frame() %>%
+  filter(Freq > 0)
+
+pair_pro_reoccur %>%
+  filter(Freq > 1) %>%
+  arrange(-Freq)
+```
+
+``` {r trans-p-sig-write-table}
+for (cancer_tmp in cancers2process) {
+  mut_affected_genes_Psig <- mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(p < 0.05) %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE %in% SMGs[[cancer_tmp]]) %>%
+  select(SUB_GENE) %>%
+  unique()
+
+  write.table(x = mut_affected_genes_Psig$SUB_GENE, file = paste0(makeOutDir(resultD = resultD), cancer_tmp, "_mut_affected_genes_Psig.txt"),
+              col.names = F, row.names = F, sep = "\t", quote = F)
+  
+mut_affected_genes_background <- mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  filter(GENE %in% SMGs[[cancer_tmp]]) %>%
+  select(SUB_GENE) %>%
+  unique()
+  write.table(x = mut_affected_genes_background$SUB_GENE, file = paste0(makeOutDir(resultD = resultD), cancer_tmp, "_mut_affected_genes_background.txt"),
+              col.names = F, row.names = F, sep = "\t", quote = F)
+}
+
+
+```
+
+``` {r trans-fdr-sig}
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(fdr < 0.05) %>%
+  arrange(fdr) %>%
+  select(GENE) %>%
+  unique
+# 1	TP53			
+# 21	CTNNB1			
+# 35	JAK1			
+# 49	PIK3R1			
+# 50	PTEN			
+# 51	AKT1
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(fdr < 0.05) %>%
+  filter(GENE == "PIK3R1")
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(fdr < 0.05) %>%
+  arrange(fdr)
+
+omnipath_tab %>%
+  filter(SUB_GENE == "PTEN", GENE == "CSNK2A1") 
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(fdr < 0.05) %>%
+  select(pair_pro_cancer, pair_pro) %>%
+  unique() %>%
+  select(pair_pro) %>%
+  table()
+
+```
+
+#### kinase mutations
+``` {r trans-kinase-mutation}
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% kinases) %>%
+  select(pair_pro_cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% kinases) %>%
+  filter(p < 0.05) %>%
+  select(pair_pro_cancer) %>%
+  unique() %>%
+  nrow()
+488/2142
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% phosphatases) %>%
+  select(pair_pro_cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% phosphatases) %>%
+  filter(p < 0.05) %>%
+  select(pair_pro_cancer) %>%
+  unique() %>%
+  nrow()
+50/253
+```
+
+##### affect sub protein
+##### affect sub phospho
+#### substrate mutations
+``` {r trans-substrate-mutation}
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(SUB_GENE.is_kinase | SUB_GENE.is_phosphatase) %>%
+  select(pair_pro_cancer) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(SUB_GENE.is_kinase | SUB_GENE.is_phosphatase) %>%
+  filter(p < 0.05) %>%
+  select(pair_pro_cancer) %>%
+  unique() %>%
+  nrow()
+522/2546
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% phosphatases) %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow()
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% phosphatases) %>%
+  filter(p < 0.05) %>%
+  select(pair_pro) %>%
+  unique() %>%
+  nrow()
+```
+
+##### affect kinase protein
+##### affect kinase phospho
+### summary
+#### prevalence
+in cis, % associated overall, for kinase, for the substrates we were looking at
+in trans, % associated overall, for kinase mutations, for substrate mutations  
+
+### examples
+#### TP53
+``` {r TP53-FDR}
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(fdr < 0.05) %>%
+  filter(SELF == "trans") %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(fdr < 0.05) %>%
+  filter(SELF == "trans") %>%
+  filter(SUB_GENE.is_kinase) %>%
+  select(SUB_GENE) %>%
+  unique()
+
+
+```
+
+``` {r TP53-kinase-FDR}
+pair_pro_reoccur %>%
+  filter(GENE == "TP53") %>%
+  filter(Freq > 1) %>%
+  arrange(-Freq)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(fdr < 0.05) %>%
+  filter(SELF == "trans") %>%
+  filter(SUB_GENE.is_kinase) %>%
+  select(pair_pro, pair_pro_cancer) %>%
+  unique() %>%
+  select(pair_pro) %>%
+  table()
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(fdr < 0.05) %>%
+  filter(SUB_GENE %in% c("AURKA", "CHEK2", "EIF2AK2", "SMG1", "STK11")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(fdr < 0.05) %>%
+  filter(SUB_GENE %in% c("CHEK2")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(fdr < 0.05) %>%
+  filter(SUB_GENE %in% c("CHEK1")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(fdr < 0.05) %>%
+  filter(SUB_GENE %in% c("ATR")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(fdr < 0.05) %>%
+  filter(SUB_GENE %in% c("ATM")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff)
+```
+
+```{r TP53-ATR}
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% c("ATR")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% c("ATR")) %>%
+  filter(SUB_MOD_RSD == "PRO") %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% c("ATR")) %>%
+  filter(SUB_MOD_RSD == "RNA") %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% c("TOPBP1", "MSH6", "CLSPN", "ATRIP", "RAD50")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE %in% c("RAD50")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p) %>%
+  arrange(fdr)
+
+regression %>%
+  filter(SUB_GENE == "ATR" & SUB_MOD_RSD == "T1989") %>%
+  filter(regulated == T)
+
+regression %>%
+  filter(GENE == "ATR") %>%
+  filter(regulated == T) %>%
+  filter(Cancer == "BRCA")
+
+regression %>%
+  filter(GENE == "ATR") %>%
+  filter(regulated == T) %>%
+  filter(Cancer == "BRCA") %>%
+  filter(!is.na(Source))
+
+regression %>%
+  filter(SUB_GENE == "TOPBP1") %>%
+  filter(regulated == T) %>%
+  filter(Cancer == "BRCA")
+
+```
+
+```{r TP53-CDK1}
+mut_impact_tab <- load_mut_impact_proteome()
+mut_impact_tab <- mut_impact_tab %>%
+  filter(cancer %in% cancers2proces) %>%
+  filter(SUB_GENE.is_kinase | SUB_GENE.is_phosphatase | SUB_GENE.is_substrate | SELF == "cis") %>%
+  filter(num >= num_genoalt_thres)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  # filter(fdr < 0.05) %>%
+  filter(SUB_GENE %in% c("CDK1")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff) %>%
+  arrange(fdr)
+```
+
+
+``` {r TP53-phosphatase-FDR}
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(fdr < 0.05) %>%
+  filter(SELF == "trans") %>%
+  filter(SUB_GENE.is_phosphatase) %>%
+  select(pair_pro, pair_pro_cancer) %>%
+  unique() %>%
+  select(pair_pro) %>%
+  table()
+# TP53:PPP1CB TP53:PPP2CA TP53:PPP2CB 
+#           1           1           1 
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(fdr < 0.05) %>%
+  filter(SUB_GENE %in% c("PPP2CA", "PPP2CB")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(fdr < 0.05) %>%
+  filter(SUB_GENE %in% c("PPP1CB")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff)
+
+```
+
+
+``` {r TP53-correlated}
+regression %>%
+  filter(SUB_GENE == "TP53") %>%
+  filter(fdr_sig == T)
+
+mut_impact_tab %>%
+  filter(GENE == "TP53") %>%
+  filter(SUB_GENE == "IKBKB")
+
+
+regression %>%
+  filter(GENE == "MAPKAPK5") %>%
+    filter(SUB_GENE == "TP53")
+
+regression %>%
+  filter(GENE == "AURKA") %>%
+  filter(SUB_GENE == "TP53")
+
+```
+
+```{r candidates2write}
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(fdr < 0.05) %>%
+  filter(GENE != "TP53") %>%
+  filter(SUB_GENE.is_kinase == T | SUB_GENE.is_phosphatase == T| SUB_GENE.is_substrate == T) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p, SUB_GENE.is_kinase, SUB_GENE.is_phosphatase, SUB_GENE.is_substrate) %>%
+  arrange(fdr)
+```
+#### JAK1
+```{r JAK1}
+mut_impact_tab %>%
+  filter(SELF == "cis") %>%
+  # filter(fdr < 0.05) %>%
+  filter(GENE == "JAK1") %>%
+  # filter(SUB_GENE.is_kinase == T | SUB_GENE.is_phosphatase == T| SUB_GENE.is_substrate == T) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p, SUB_GENE.is_kinase, SUB_GENE.is_phosphatase, SUB_GENE.is_substrate) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  # filter(SELF == "trans") %>%
+  # filter(fdr < 0.05) %>%
+  filter(GENE == "JAK1") %>%
+  # filter(SUB_GENE.is_kinase == T | SUB_GENE.is_phosphatase == T| SUB_GENE.is_substrate == T) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p, SUB_GENE.is_kinase, SUB_GENE.is_phosphatase, SUB_GENE.is_substrate) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  # filter(SELF == "trans") %>%
+  # filter(fdr < 0.05) %>%
+  filter(GENE == "STAT3") %>%
+  # filter(SUB_GENE.is_kinase == T | SUB_GENE.is_phosphatase == T| SUB_GENE.is_substrate == T) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p, SUB_GENE.is_kinase, SUB_GENE.is_phosphatase, SUB_GENE.is_substrate) %>%
+  arrange(fdr)
+
+regression %>%
+  filter(GENE == "JAK1") %>%
+  filter(SUB_GENE == "STAT3")
+
+regression %>%
+  filter(GENE == "JAK1")
+
+mut_impact_tab %>%
+  filter(GENE == "JAK1") %>%
+  filter(SUB_GENE == "STAT3") %>%
+  filter(cancer == "UCEC") %>%
+  select(cancer, pair, variant_class, num, fdr, meddiff, p, SUB_GENE.is_kinase, SUB_GENE.is_phosphatase, SUB_GENE.is_substrate) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(GENE == "JAK1") %>%
+  filter(SUB_GENE == "STAT3") %>%
+  filter(variant_class == "truncation") %>%
+  filter(cancer == "UCEC") %>%
+  select(cancer, pair, variant_class, num, fdr, meddiff, p, SUB_GENE.is_kinase, SUB_GENE.is_phosphatase, SUB_GENE.is_substrate) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(GENE != "JAK1") %>%
+  filter(SUB_GENE == "STAT3") %>%
+  filter(cancer == "UCEC") %>%
+  select(cancer, pair, variant_class, num, fdr, meddiff, p, SUB_GENE.is_kinase, SUB_GENE.is_phosphatase, SUB_GENE.is_substrate) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(GENE == "GATA3") %>%
+  # filter(SUB_GENE.is_kinase == T | SUB_GENE.is_phosphatase == T| SUB_GENE.is_substrate == T) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p, SUB_GENE.is_kinase, SUB_GENE.is_phosphatase, SUB_GENE.is_substrate) %>%
+  arrange(fdr)
+```
+
+#### WNT-CTNNB1
+``` {r CTNNB1}
+mut_impact_tab <- load_mut_impact_proteome()
+mut_impact_tab <- mut_impact_tab %>%
+  filter(cancer %in% cancers2proces) %>%
+  # filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(num >= num_genoalt_thres)
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(fdr < 0.05) %>%
+  filter(GENE == "CTNNB1") %>%
+  filter(SUB_GENE.is_kinase == T | SUB_GENE.is_phosphatase == T| SUB_GENE.is_substrate == T) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p, SUB_GENE.is_kinase, SUB_GENE.is_phosphatase, SUB_GENE.is_substrate) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(fdr < 0.05) %>%
+  filter(GENE == "APC") %>%
+  filter(SUB_GENE.is_kinase == T | SUB_GENE.is_phosphatase == T| SUB_GENE.is_substrate == T) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p, SUB_GENE.is_kinase, SUB_GENE.is_phosphatase, SUB_GENE.is_substrate) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(fdr < 0.1) %>%
+  filter(GENE %in% c("CTNNB1", "APC", "AXIN1")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% c("APC")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(SELF == "cis") %>%
+  filter(GENE %in% c("APC")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% c("APC")) %>%
+  filter(SUB_GENE %in% c("CSNK1A1")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(GENE %in% c("CTNNB1")) %>%
+  filter(SUB_GENE %in% c("PRKCD")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  # filter(fdr < 0.05) %>%
+  filter(GENE == "CTNNB1") %>%
+  filter(SUB_GENE %in% c("PRKCD", "CSNK1A1")) %>%
+  # filter(SUB_GENE.is_kinase | SUB_GENE.is_phosphatase | SUB_GENE.is_substrate | SELF == "cis") %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p) %>%
+  arrange(fdr)
+
+regression %>%
+  filter(SUB_GENE == "CTNNB1") %>%
+  filter(GENE %in% c("PRKCD", "CSNK1A1")) %>%
+  filter(Cancer == "UCEC")
+
+
+regression %>%
+  filter(SUB_GENE == "CTNNB1") %>%
+  filter(regulated == T) %>%
+  filter(Cancer == "UCEC")
+
+regression %>%
+  filter(SUB_GENE == "CTNNB1") %>%
+  filter(regulated == T) %>%
+  filter(Cancer == "CO")
+
+regression %>%
+  filter(SUB_GENE == "APC") %>%
+  filter(regulated == T)
+
+```
+
+
+#### PI3K-AKT
+``` {r PI3K}
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(fdr < 0.05) %>%
+  filter(GENE != "TP53") %>%
+  filter(SUB_GENE.is_kinase | SUB_GENE.is_phosphatase | SUB_GENE.is_substrate) %>%
+  filter(affected_exp_type %in% affected_exp_types2process) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(fdr < 0.1) %>%
+  filter(cancer == "CCRCC")
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(GENE == "PTEN") %>%
+  filter(fdr < 0.1)
+
+
+mut_impact_tab %>%
+  filter(SELF == "cis") %>%
+  filter(GENE == "PTEN") %>%
+  filter(fdr < 0.1)
+
+mut_impact_tab %>%
+  filter(SELF == "trans") %>%
+  filter(GENE == "AKT1") %>%
+  # filter(p < 0.2) %>%
+  filter(SUB_GENE %in% c("GSK3B", "BAD")) %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p, num) %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(GENE == "PIK3CA") %>%
+  filter(fdr < 0.1)
+
+mut_impact_tab %>%
+  filter(GENE == "PIK3CA") %>%
+  filter(SUB_GENE == "AKT1") %>%
+  select(cancer, pair, variant_class, fdr, meddiff, p, num) %>%
+  arrange(fdr)
+
+mut_impact_tab %>% 
+  filter(GENE == "PIK3R1") %>%
+  filter(fdr < 0.1)
+
+mut_impact_tab %>%
+  filter(SUB_GENE == "PIK3CA") %>%
+  filter(fdr < 0.1)
+
+mut_impact_tab %>%
+  filter(SUB_GENE == "PIK3R1") %>%
+  filter(fdr < 0.1)
+```
+
+```{r Niban}
+
+regression %>%
+  filter(SUB_GENE == "FAM129A") %>%
+  filter(Cancer == "BRCA")
+
+```
+## mutation impact and phosphorylation correlation
+how mutation-proteome associations contribute to the quantitative phosphorylation correlation between kinase and substrate pairs
+it's most simple if summarize it at kinase-substrate-protein level
+```{r input-regression-and-annotate}
+regression <- fread(input = paste0(ppnD, "regression/tables/annotate_regression_with_mut_impact/", 
+                                     "regression_cptac2p_cptac3_tumor_reg_nonNA20_mut_impact_cancer_specificity_annotated.txt"),
+                    data.table = F)
+nrow(regression)
+```
+
+```{r summary-regression}
+summary_df <- data.frame(is_mut.GENE = !is.na(regression$p.GENE), 
+                         is_mut_Psig.GENE = (!is.na(regression$p.GENE) & regression$p.GENE < 0.05), 
+                         is_mut_fdrsig.GENE = (!is.na(regression$p.GENE) & regression$fdr.GENE < 0.05),
+                         is_mut.SUB_GENE = !is.na(regression$p.SUB_GENE), 
+                         is_mut_Psig.SUB_GENE = (!is.na(regression$p.SUB_GENE) & regression$p.SUB_GENE < 0.05),
+                         is_mut_fdrsig.SUB_GENE = (!is.na(regression$p.SUB_GENE) & regression$fdr.SUB_GENE < 0.05),
+                         cancer = regression$Cancer, 
+                         SELF = regression$SELF, 
+                         regulated = (regression$pair_pro_cancer %in% regression$pair_pro_cancer[regression$regulated]), 
+                         id = regression$pair_pro_cancer)
+summary_df_uniq <- unique(summary_df)
+
+summary_tab <- data.frame(table(summary_df_uniq[, colnames(summary_df_uniq)[!(colnames(summary_df_uniq) %in% c("id"))]]))
+summary_tab <- summary_tab[summary_tab$Freq > 0,]
+```
+
+### association
+use fisher's test to test association between abundance levels being associated with mutations and being correlated at certain phosphosite
+```{r regression-mut-association-trans}
+summary_df_uniq <- summary_df_uniq %>%
+  mutate(is_mut_Psig = (is_mut_Psig.SUB_GENE | is_mut_Psig.GENE))
+
+summary_df_uniq %>%
+  filter(regulated == T) %>%
+  filter(is_mut.GENE == T | is_mut.SUB_GENE == T) %>%
+    filter(SELF == "trans") %>%
+  select(id) %>%
+  unique() %>%
+  nrow()
+
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.GENE == T | is_mut.SUB_GENE == T) %>%
+  filter(SELF == "trans") %>%
+  arrange(id) %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+# not signficant if merge kinase + substrat tgt
+
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.GENE == T) %>%
+  filter(SELF == "trans") %>%
+  arrange(id) %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.SUB_GENE == T) %>%
+  filter(SELF == "trans") %>%
+  arrange(id) %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+
+summary_df_uniq %>%
+  filter(regulated == T) %>%
+  filter(is_mut_fdrsig.GENE == T | is_mut_fdrsig.SUB_GENE == T)
+
+regression %>%
+  filter(pair_pro_cancer == "PRKCD:CTNNB1:UCEC")
+
+mut_impact_tab %>%
+  filter(pair_pro_cancer == "CTNNB1:PRKCD:UCEC") %>%
+  arrange(fdr)
+
+regression %>%
+  filter(pair == "PRKCD:CTNNB1:S552")
+
+
+```
+
+### prevalence
+% kinase-substrate protein pairs being correlated among mutationally-associated pairs
+```{r regression-mut-prevalence-BRCA}
+cancer_tmp <- "BRCA"
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.GENE == T | is_mut.SUB_GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+# not signficant if merge kinase + substrat tgt
+
+cancer_tmp <- "BRCA"
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+
+cancer_tmp <- "BRCA"
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.SUB_GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+
+```
+
+```{r regression-mut-prevalence-OV}
+summary_tab %>%
+  filter(regulated == T) %>%
+  filter(cancer == "OV") %>%
+  filter(is_mut.GENE == T | is_mut.SUB_GENE == T) %>%
+  select(Freq) %>%
+  sum()
+
+summary_df %>%
+  filter(regulated == T) %>%
+  filter(is_mut_Psig.GENE | is_mut_Psig.SUB_GENE) %>%
+  filter(cancer == "OV") %>%
+  select(id) %>%
+  unique()
+```
+
+```{r regression-mut-prevalence-CO}
+cancer_tmp <- "CO"
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.GENE == T | is_mut.SUB_GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+# not signficant if merge kinase + substrat tgt
+
+cancer_tmp <- "CO"
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+
+cancer_tmp <- "CO"
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.SUB_GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+
+```
+
+```{r regression-mut-prevalence-UCEC}
+cancer_tmp <- "UCEC"
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.GENE == T | is_mut.SUB_GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+# not signficant if merge kinase + substrat tgt
+
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.SUB_GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+
+```
+
+```{r regression-mut-prevalence-CCRCC}
+cancer_tmp <- "CCRCC"
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.GENE == T | is_mut.SUB_GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+# not signficant if merge kinase + substrat tgt
+
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+
+fisher_tab <- summary_df_uniq %>%
+  filter(is_mut.SUB_GENE == T) %>%
+  filter(SELF == "trans") %>%
+  filter(cancer == cancer_tmp) %>%
+  arrange(id)  %>%
+  select(regulated, is_mut_Psig) %>%
+  table()
+fisher_tab
+fisher.test(fisher_tab, alternative = "greater")
+
+```
+
+### cancer type specificity
+#### prevalance
+``` {r mut-cancer-specific}
+regression %>%
+  filter(regulated_uniq == T) %>%
+  filter((!is.na(p.GENE) & (p.GENE < 0.05)) | (!is.na(p.SUB_GENE) & p.SUB_GENE < 0.05))
+```
+#### association

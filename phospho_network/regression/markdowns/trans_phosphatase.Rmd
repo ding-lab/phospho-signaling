@@ -1,0 +1,272 @@
+---
+title: "trans associations by phosphatase"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+library(knitr)
+opts_knit$set(root.dir = baseD)
+baseD = "/Users/yigewu/Box\ Sync/"
+setwd(baseD)
+source('./cptac2p_analysis/preprocess_files/preprocess_files_shared.R')
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+```
+
+
+``` {r input-ks-table}
+omnipath_tab <- load_omnipath()
+omnipath_tab <- annotate_enzyme_type(regression = omnipath_tab, kinases = kinases, phosphatases = phosphatases)
+omnipath_tab$pair <- paste0(omnipath_tab$pair_pro, ":", omnipath_tab$SUB_MOD_RSD)
+omnipath_tab$SELF <- ifelse(as.vector(omnipath_tab$GENE) == as.vector(omnipath_tab$SUB_GENE), "cis", "trans")
+omnipath_tab$rsd <- paste0(omnipath_tab$SUB_GENE, "_", omnipath_tab$SUB_MOD_RSD)
+# k_s_table <- omnipath_tab[omnipath_tab$enzyme_type == enzyme_type,]
+
+psp_tab <- load_psp()
+psp_tab$SELF <- ifelse(as.vector(psp_tab$GENE) == as.vector(psp_tab$SUB_GENE), "cis", "trans")
+```
+
+```{r get-regulatory-sites}
+regulatory_sites <- fread(input = "./Ding_Lab/Projects_Current/CPTAC/pan3can_shared_data/Phospho_databases/PhosphositePlus/Mar_04_2019/Regulatory_sites", data.table = F)
+regulatory_sites <- regulatory_sites %>%
+  mutate(SUB_MOD_RSD = str_split_fixed(string = MOD_RSD, pattern = "-", n = 2)[,1])
+regulatory_sites2merge <- regulatory_sites %>%
+  select(GENE, SUB_MOD_RSD, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT) %>%
+  unique
+```
+
+```{r input-regression-and-clean-up}
+regression <- fread(input = paste0(ppnD, "regression/tables/annotate_regression_with_mut_impact/", 
+                                   "regression_cptac2p_cptac3_tumor_reg_nonNA20_mut_impact_cancer_specificity_annotated.txt"),
+                    data.table = F)
+reg_sig <- c(0.05, 0.05); names(reg_sig) <- c("kinase", "phosphatase")
+regression %>% nrow()
+regression <- regression %>%
+  filter(pair_pro %in% omnipath_tab$pair_pro[!(omnipath_tab$Source %in% c("NetKIN", "PhosphoNetworks", "MIMP"))] | pair_pro %in% psp_tab$pair_pro)
+regression %>% nrow()
+
+# regression <- change_regression_nonNA(regression = regression, reg_nonNA = 20, reg_sig = reg_sig)
+regression <- adjust_regression_by_nonNA(regression = regression, reg_nonNA = 20, reg_sig = reg_sig)
+regression <- annotate_ks_source(regression = regression)
+table(regression$Cancer)
+```
+
+```{r annotate-substrate-function}
+regression <- merge(regression, regulatory_sites2merge, by.x = c("SUBSTRATE", "SUB_MOD_RSD"), by.y = c("GENE", "SUB_MOD_RSD"), all.x = T)
+unique(regression$ON_PROCESS[grepl(x = regression$ON_PROCESS, pattern = "apoptosis")])
+
+regression$SUB_GNE.apoptosis <- sapply(1:nrow(regression), FUN = function(i, vector_function) {
+  if (!is.na(vector_function[i]) & grepl(x = vector_function[i], pattern = "apoptosis")) {
+    tmp <- "altered"
+    if (!grepl(x = vector_function[i], pattern = "apoptosis, inhibited") & grepl(x = vector_function[i], pattern = "apoptosis, induced")) {
+      tmp <- "induced"
+    }
+    if (grepl(x = vector_function[i], pattern = "apoptosis, inhibited") & !grepl(x = vector_function[i], pattern = "apoptosis, induced")) {
+      tmp <- "inhibited"
+    }
+  } else {
+    tmp <- NA
+  }
+  return(tmp)
+}, vector_function = regression$ON_PROCESS)
+regression %>%
+  filter(regulated == T) %>%
+  filter(!is.na(SUB_GNE.apoptosis)) %>%
+  select(GENE) %>%
+  unique %>%
+  nrow()
+
+regression %>%
+  filter(regulated == T) %>%
+  filter(!is.na(SUB_GNE.apoptosis)) %>%
+  select(SUB_GENE, SUB_MOD_RSD) %>%
+  unique %>%
+  nrow()
+
+regression %>%
+  filter(regulated == T) %>%
+  filter(!is.na(SUB_GNE.apoptosis)) %>%
+  select(pair, Cancer, ON_FUNCTION)
+
+kinase_apoptosis_tab <- regression %>%
+  filter(regulated == T) %>%
+  filter(!is.na(SUB_GNE.apoptosis)) %>%
+  select(GENE, SUB_GNE.apoptosis) %>%
+  table() %>%
+  as.matrix()
+
+regression %>%
+  filter(regulated == T) %>%
+  filter(!is.na(SUB_GNE.apoptosis)) %>%
+  filter(GENE == "AKT1") %>%
+  select(pair, Cancer, ON_FUNCTION)
+```
+
+```{r number-phosphatase-associations}
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(regulated == T) %>%
+  select(GENE) %>%
+  unique %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(regulated == T) %>%
+  select(pair) %>%
+  unique %>%
+  nrow()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(regulated == T) %>%
+  select(SUB_GENE, SUB_MOD_RSD) %>%
+  unique %>%
+  nrow()
+```
+
+```{r trans-phosphatase-with-functional-annotation}
+regression$GENE.is_smg <- get_SMG_by_cancer(gene_vector = regression$GENE, cancer_vector = regression$Cancer)
+regression$SUB_GENE.is_smg <- get_SMG_by_cancer(gene_vector = regression$SUB_GENE, cancer_vector = regression$Cancer)
+
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(regulated == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  arrange(GENE, SUB_GENE) %>%
+  select(pair, Cancer, ON_PROCESS, ON_FUNCTION,  ON_PROT_INTERACT, ON_OTHER_INTERACT) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(regulated == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  filter(GENE.is_smg == T | SUB_GENE.is_smg == T) %>%
+  arrange(GENE, SUB_GENE) %>%
+  select(pair, Cancer, ON_PROCESS, ON_FUNCTION,  ON_PROT_INTERACT, ON_OTHER_INTERACT) %>%
+  unique()
+```
+
+
+```{r}
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(regulated == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  filter(SUB_GENE.is_smg == T) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(regulated == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(regulated == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(GENE) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(fdr_sig == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(GENE) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(regulated == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(SUB_GENE, SUB_MOD_RSD) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(fdr_sig == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  filter(SUB_GENE %in% driver_genes$Gene) %>%
+  select(SUB_GENE, SUB_MOD_RSD) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "phosphatase") %>%
+  filter(regulated == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(SUB_GENE, SUB_MOD_RSD) %>%
+  mutate(phosphosite = paste0(SUB_GENE, "_", SUB_MOD_RSD)) %>%
+  select(phosphosite) %>%
+  table()
+
+```
+
+```{r trans-kinase-with-functional-annotation}
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(regulated == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(regulated == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(GENE) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(regulated == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(SUB_GENE, SUB_MOD_RSD) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(regulated == T) %>%
+  filter(is.direct == F)  %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  select(SUB_GENE, SUB_MOD_RSD) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  filter(SUB_GENE %in% driver_genes$Gene) %>%
+  select(SUB_GENE, SUB_MOD_RSD) %>%
+  unique()
+
+regression %>%
+  filter(SELF == "trans") %>%
+  filter(enzyme_type == "kinase") %>%
+  filter(fdr_sig == T) %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  filter(SUB_GENE %in% driver_genes$Gene) %>%
+  select(SUB_GENE, SUB_MOD_RSD) %>%
+  mutate(phosphosite = paste0(SUB_GENE, "_", SUB_MOD_RSD)) %>%
+  table()
+
+```
+
