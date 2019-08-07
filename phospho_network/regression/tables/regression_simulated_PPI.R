@@ -17,11 +17,15 @@ data2process <- matrix(data = c("BRCA", "CDAP", "tumor", "scaled", "cptac2p",
                                 "CCRCC", "PGDAC", "tumor", "MD_MAD", "cptac3",
                                 "LIHC", "PGDAC", "tumor", "MD", "cptac3"), ncol = 5, byrow = T)
 num_iterations <- 1
+num_iterations <- 2
+
 # inputs ------------------------------------------------------------------
 omnipath_tab <- load_omnipath()
-omnipath_tab <- omnipath_tab[omnipath_tab$Source != "NetKIN" | (omnipath_tab$Source == "NetKIN" & omnipath_tab$networkin_score >= 5),]
+# omnipath_tab <- omnipath_tab[omnipath_tab$Source != "NetKIN" | (omnipath_tab$Source == "NetKIN" & omnipath_tab$networkin_score >= 5),]
+omnipath_tab <- annotate_ks_source(omnipath_tab)
+omnipath_tab <- omnipath_tab %>%
+  filter(is.direct == T)
 omnipath_tab <- data.frame(omnipath_tab)
-
 k_s_table <- omnipath_tab
 psp_tab <- load_psp()
 

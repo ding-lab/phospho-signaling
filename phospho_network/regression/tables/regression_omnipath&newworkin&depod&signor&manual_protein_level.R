@@ -11,8 +11,6 @@ source('./cptac2p_analysis/phospho_network/phospho_network_shared.R')
 
 # set variables -----------------------------------------------------------
 least_samples <- 5# least number of samples with complete data for each model
-inputnames <- c("noControl", "Control")
-names(inputnames) <- c("tumor", "normal")
 # data2process <- matrix(data = c("CCRCC", "PGDAC", "tumor", "MD_MAD", "cptac3",
 #                                 "UCEC", "PGDAC", "tumor", "median_polishing", "cptac3"), ncol = 5, byrow = T)
 data2process <- matrix(data = c("LIHC", "PGDAC", "tumor", "MD", "cptac3"), ncol = 5, byrow = T)

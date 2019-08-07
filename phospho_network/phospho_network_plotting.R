@@ -1,8 +1,13 @@
 # Yige Wu @ WashU 2018 Jan
 ## shared plotting functions for phospho_network
 
-source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R')
-source(paste0(baseD, "cptac2p_analysis/pan3can_aes.R")) # aes for general purposes; it should be one directory out of the working directory
+
+# source ------------------------------------------------------------------
+code_top_dir <- "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phospho-signaling_analysis/"
+path2phospho_network_shared <- paste0(code_top_dir, "phospho_network/phospho_network_shared.R")
+source(path2phospho_network_shared)
+path2aes <- paste0(code_top_dir, "pan3can_aes.R")
+source(path2aes)
 
 # library -----------------------------------------------------------------
 library(ggplot2)
@@ -25,8 +30,6 @@ color_aa <- c("#8da0cb", "#e78ac3", "#a6d854"); names(color_aa) <- c("S", "T", "
 
 # compare -----------------------------------------------------------------
 symnum.args <- list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "ns"))
-
-
 
 # pheatmap ----------------------------------------------------------------
 if(!("pheatmap" %in% installed.packages()[,"Package"])) {

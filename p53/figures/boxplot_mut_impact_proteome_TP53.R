@@ -11,8 +11,8 @@ library(readxl)
 # set variables -----------------------------------------------------------
 my_comparisons <- list(enzyme_mutation = c("enzyme_mutation", "control"))
 sample_type2test <- names(my_comparisons)
-cohort <- "TCGA"
-# cohort <- "CPTAC"
+# cohort <- "TCGA"
+cohort <- "CPTAC"
 
 # plot mutation impact -----------------------------------------------------------
 resultDnow <- makeOutDir(resultD = resultD)
@@ -32,7 +32,8 @@ resultDnow <- makeOutDir(resultD = resultD)
 # enzyme <- "TP53"; substrate <- "PRKAB1"; rsd <- "PRO"; enzyme_upstream <-  NULL
 # enzyme <- "TP53"; substrate <- "PRKAB1"; rsd <- "PRO"; enzyme_upstream <-  NULL
 # enzyme <- "TP53"; substrate <- "CCNB1"; rsd <- "PRO"; enzyme_upstream <-  NULL
-enzyme <- "TP53"; substrate <- "CCNB1"; rsd <- "RNA"; enzyme_upstream <-  NULL
+# enzyme <- "TP53"; substrate <- "CCNB1"; rsd <- "RNA"; enzyme_upstream <-  NULL
+enzyme <- "TP53"; substrate <- "CDH3"; rsd <- "RNA"; enzyme_upstream <-  NULL
 
 ## make directory
 subdir1 <- paste0(resultDnow, enzyme, "/")
@@ -44,7 +45,9 @@ dir.create(subdir3)
 
 ## do for each cancer type
 # for (cancer in c("BRCA", "UCEC", "LIHC", "CO", "CCRCC", "OV")) {
-for (cancer in c("BRCA", "UCEC", "CO")) {
+# for (cancer in c("BRCA", "UCEC", "CO")) {
+for (cancer in c("BRCA")) {
+    
   if (cohort == "CPTAC") {
     ## get the expression level of the substrate
     if (cancer %in% c("BRCA", "OV", "CO")) {

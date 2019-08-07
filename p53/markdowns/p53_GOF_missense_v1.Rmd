@@ -1,0 +1,150 @@
+---
+title: "look p53 GOF missense mutations"
+output: html_document
+---
+
+## source
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+setwd(baseD)
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+library(knitr)
+opts_knit$set(root.dir = baseD)
+```
+
+## inputs
+``` {r vairiables}
+num_genoalt_thres <- 5
+cancers2proces <- c("BRCA", "OV", "CO", "UCEC", "CCRCC", "LIHC")
+```
+
+```{r input-mut_impact_tab}
+mut_impact_tab <- fread(input = "./cptac2p/analysis_results/p53/tables/test_TP53_missense_impact_TF_downstream/TP53_missense_mut_impact_tab.txt", data.table = F)
+
+pair_tab_TF <- fread(input = "./cptac2p/analysis_results/p53/tables/test_TP53_missense_impact_TF_downstream/pair_tab_w.TFs.txt", data.table = F)
+pair_tab_TF <- pair_tab_TF %>%
+  mutate(SUB_GENE.TF = str_split_fixed(string = pair_pro_previous, pattern = ":", n = 2)[,2])
+```
+
+```{r get-number-of-missense}
+mut_impact_tab %>%
+  filter(cancer == "BRCA") %>%
+  select(num) %>%
+  max()
+
+mut_impact_tab %>%
+  filter(cancer == "BRCA") %>%
+  select(num_control) %>%
+  max()
+
+mut_impact_tab %>%
+  filter(cancer == "OV") %>%
+  select(num) %>%
+  max()
+
+mut_impact_tab %>%
+  filter(cancer == "OV") %>%
+  select(num_control) %>%
+  max()
+
+mut_impact_tab %>%
+  filter(cancer == "CO") %>%
+  select(num) %>%
+  max()
+
+mut_impact_tab %>%
+  filter(cancer == "CO") %>%
+  select(num_control) %>%
+  max()
+
+mut_impact_tab %>%
+  filter(cancer == "UCEC") %>%
+  select(num) %>%
+  max()
+
+mut_impact_tab %>%
+  filter(cancer == "UCEC") %>%
+  select(num_control) %>%
+  max()
+
+mut_impact_tab %>%
+  filter(cancer == "CCRCC") %>%
+  select(num) %>%
+  max()
+
+mut_impact_tab %>%
+  filter(cancer == "LIHC") %>%
+  select(num) %>%
+  max()
+
+mut_impact_tab %>%
+  filter(cancer == "LIHC") %>%
+  select(num_control) %>%
+  max()
+```
+
+```{r check-TF-relation-table}
+tf_tab <- fread(input = "./Ding_Lab/Projects_Current/TP53_shared_data/resources/PPI/TF_interactions.txt", data.table = F)
+tf_tab %>%
+  nrow()
+
+tf_tab %>%
+  select(tfregulons_level) %>%
+  table()
+
+tf_tab %>%
+  select(sources) %>%
+  table()
+```
+
+```{r check-whether-which-well-known-mutant-p53-interacting-TFs-are-in-TP53-interactor-table}
+TP53_pair_tab <- fread("./cptac2p/analysis_results/p53/tables/compile_TP53_interactor_pair_tab/TP53_interactor_pair_tab.txt", data.table = F)
+TP53_GOF_interacting_TFs[!(TP53_GOF_interacting_TFs %in% TP53_pair_tab$SUB_GENE)]
+
+TP53_GOF_interacting_TFs[(TP53_GOF_interacting_TFs %in% TP53_pair_tab$SUB_GENE)]
+
+TP53_GOF_interacting_TFs[(TP53_GOF_interacting_TFs %in% TP53_pair_tab$SUB_GENE) & (TP53_GOF_interacting_TFs %in% tf_tab$source_genesymbol)]
+
+```
+
+```{r check-whether-which-well-known-mutant-p53-interacting-TFs-are-tested-in-result-table}
+## get the list of significantly altered downstream targets
+significant_affected_targets <- mut_impact_tab %>%
+  filter(fdr < 0.05) %>%
+  filter(affected_exp_type == "RNA") %>%
+  select(SUB_GENE) %>%
+  unique() %>%
+  as.vector()
+
+## the downstreams of GOF-mediating-TFs affected by p53
+pair_tab_TF %>%
+  filter(SUB_GENE %in% significant_affected_targets$SUB_GENE) %>%
+  filter(SUB_GENE.TF %in% TP53_GOF_interacting_TFs) %>%
+  select(SUB_GENE.TF) %>%
+  table()
+
+## filter out the genes directly regulated by p53
+pair_tab_TF %>%
+  filter(SUB_GENE %in% significant_affected_targets$SUB_GENE) %>%
+  filter(SUB_GENE.TF %in% TP53_GOF_interacting_TFs) %>%
+  filter(!(SUB_GENE %in% TP53_pair_tab$SUB_GENE)) %>%
+  select(SUB_GENE.TF) %>%
+  table()
+```
+
+```{r check-SP1-downstream}
+mut_impact_tab %>%
+  filter(fdr < 0.05) %>%
+  filter(affected_exp_type == "RNA") %>%
+  filter(SUB_GENE %in% pair_tab_TF$SUB_GENE[pair_tab_TF$SUB_GENE.TF == "SP1"]) %>%
+  filter(!(SUB_GENE %in% TP53_pair_tab$SUB_GENE))
+
+mut_impact_tab %>%
+  filter(fdr < 0.05) %>%
+  filter(affected_exp_type == "RNA") %>%
+  filter(SUB_GENE %in% pair_tab_TF$SUB_GENE[pair_tab_TF$SUB_GENE.TF == "E2F1"]) %>%
+  filter(!(SUB_GENE %in% TP53_pair_tab$SUB_GENE))
+
+```
+

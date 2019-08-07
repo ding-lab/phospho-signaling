@@ -1,11 +1,12 @@
 # Yige Wu @ WashU 2019 Jan
-## 
+## plto the expression TP53 for TP53 mutations hitting different TP53 regions
 
 # source ------------------------------------------------------------------
 source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_plotting.R')
 source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R')
 source('/Users/yigewu/Box Sync/cptac2p_analysis/dependencies/tables/load_TCGA_pathways.R')
 source('/Users/yigewu/Box Sync/cptac2p_analysis/expression_matrices/expression_shared.R')
+source('/Users/yigewu/Box Sync/cptac2p_analysis/p53/TP53_shared.R')
 
 library(ggrepel)
 library(readxl)
@@ -30,13 +31,16 @@ hotspot_proximal <- as.vector(sapply(hotspot, function(i) i+(-5):5))
 
 # decide what to plot -----------------------------------------------------
 # pairs2plot <- paste0("TP53", ":", "ESR1", ":", "PRO")
-pairs2plot <- paste0("TP53", ":", "ESR1", ":", "RNA")
+# pairs2plot <- paste0("TP53", ":", "ESR1", ":", "RNA")
 # pairs2plot <- paste0("TP53", ":", "TP53", ":", "RNA")
 # pairs2plot <- paste0("TP53", ":", "TP53", ":", "PRO")
 # pairs2plot <- paste0("TP53", ":", "CDKN1A", ":", "RNA")
 # pairs2plot <- paste0("TP53", ":", "CDKN1A", ":", "PRO")
 # pairs2plot <- paste0("TP53", ":", "MDM2", ":", "RNA")
 # pairs2plot <- paste0("TP53", ":", "CDKN1A", ":", "PRO")
+# pairs2plot <- paste0("TP53", ":", "ETS2", ":", "RNA")
+# pairs2plot <- paste0("TP53", ":", "ESR1", ":", "RNA")
+pairs2plot <- paste0("TP53", ":", "ESR1", ":", "PRO")
 
 pairs2plot
 
@@ -123,16 +127,16 @@ for (pair in pairs2plot) {
       ## order samples
       col_anno %>% head()
       
-      for (gene in c(geneA, geneB)) {
-        if (paste0("CNA.", gene) %in% colnames(col_anno)) {
-          col_anno <- col_anno[order(col_anno[, paste0("CNA.", gene)], decreasing = T),]
-          ann_colors[[paste0("CNA.", gene)]] <-  c(amplification = "#E41A1C", deletion = "#377EB8", "neutral" = "grey")
-        }
-        if (paste0("mutation.", gene) %in% colnames(col_anno)) {
-          col_anno <- col_anno[order(col_anno[, paste0("mutation.", gene)], decreasing = T),]
-          ann_colors[[paste0("mutation.", gene)]] <- c(missense = "#E41A1C", truncation = "#377EB8", wild_type = "white", "missense&truncation" = "#6A3D9A", other_mutation = "#FF7F00", silent = "#33A02C")
-        }
-      }
+      # for (gene in c(geneA, geneB)) {
+      #   if (paste0("CNA.", gene) %in% colnames(col_anno)) {
+      #     col_anno <- col_anno[order(col_anno[, paste0("CNA.", gene)], decreasing = T),]
+      #     ann_colors[[paste0("CNA.", gene)]] <-  c(amplification = "#E41A1C", deletion = "#377EB8", "neutral" = "grey")
+      #   }
+      #   if (paste0("mutation.", gene) %in% colnames(col_anno)) {
+      #     col_anno <- col_anno[order(col_anno[, paste0("mutation.", gene)], decreasing = T),]
+      #     ann_colors[[paste0("mutation.", gene)]] <- c(missense = "#E41A1C", truncation = "#377EB8", wild_type = "white", "missense&truncation" = "#6A3D9A", other_mutation = "#FF7F00", silent = "#33A02C")
+      #   }
+      # }
       
       # make the matrix of values showing in heatmap ----------------------------
       sup_tab_can <- NULL
@@ -212,6 +216,7 @@ for (pair in pairs2plot) {
   }, tab2p = tab2p)
   control_exp_meds <- data.frame(control_exp_med = control_exp_med, cancer = names(control_exp_med))
   tab2p <- merge(tab2p, control_exp_meds, by = c("cancer"), all.x = T)
+  
   ## get the high quantile of expression values
   exp_high <- sapply(unique(tab2p$cancer), FUN = function(cancer, tab2p) {
     tab2p_can <- tab2p[tab2p$cancer == cancer,]
@@ -221,6 +226,7 @@ for (pair in pairs2plot) {
   names(exp_high) <-  unique(tab2p$cancer)
   exp_highs <- data.frame(exp_high = exp_high, cancer = unique(tab2p$cancer))
   tab2p <- merge(tab2p, exp_highs, by = c("cancer"), all.x = T)
+  
   ## get the low quantile of expression values
   exp_low <- sapply(unique(tab2p$cancer), FUN = function(cancer, tab2p) {
     tab2p_can <- tab2p[tab2p$cancer == cancer,]
@@ -277,9 +283,6 @@ for (pair in pairs2plot) {
   geneB <- str_split(string = pair, pattern = ":")[[1]][2]
   phosphosite <- str_split(string = pair, pattern = ":")[[1]][3]
   
-  # for (cancer in c("BRCA")) {
-  
-  
   for (cancer in c("BRCA")) {
     fn = paste0(makeOutDir(resultD = resultD), cancer, "_", geneA, "_", geneB, "_", phosphosite, "_by_domain_linear.pdf")
     
@@ -289,10 +292,14 @@ for (pair in pairs2plot) {
       ## input maf
       maf <- loadMaf(cancer = cancer, maf_files = maf_files)
       maf <- maf[maf$Hugo_Symbol == geneA,]
+      maf <- maf %>%
+        filter(Hugo_Symbol == geneA) %>%
+        filter(Variant_Classification != "Silent")
       
-      ## input CNA matrix
-      cna_tab <- loadCNAstatus(cancer = cancer)
-      cna_tab <- cna_tab[cna_tab$gene %in% c(geneA, geneB), ]
+      ## input TP53 deep deletion
+      # cna_tab <- loadCNAstatus(cancer = cancer)
+      # cna_tab <- cna_tab[cna_tab$gene %in% c(geneA, geneB), ]
+      cna_tab <- loadTP53DeepDeletion(cancer = cancer)
       
       ## load RNA
       rna_tab <- loadRNA(cancer = cancer)
@@ -351,16 +358,16 @@ for (pair in pairs2plot) {
       ## order samples
       col_anno %>% head()
       
-      for (gene in c(geneA, geneB)) {
-        if (paste0("CNA.", gene) %in% colnames(col_anno)) {
-          col_anno <- col_anno[order(col_anno[, paste0("CNA.", gene)], decreasing = T),]
-          ann_colors[[paste0("CNA.", gene)]] <-  c(amplification = "#E41A1C", deletion = "#377EB8", "neutral" = "grey")
-        }
-        if (paste0("mutation.", gene) %in% colnames(col_anno)) {
-          col_anno <- col_anno[order(col_anno[, paste0("mutation.", gene)], decreasing = T),]
-          ann_colors[[paste0("mutation.", gene)]] <- c(missense = "#E41A1C", truncation = "#377EB8", wild_type = "white", "missense&truncation" = "#6A3D9A", other_mutation = "#FF7F00", silent = "#33A02C")
-        }
-      }
+      # for (gene in c(geneA, geneB)) {
+      #   if (paste0("CNA.", gene) %in% colnames(col_anno)) {
+      #     col_anno <- col_anno[order(col_anno[, paste0("CNA.", gene)], decreasing = T),]
+      #     ann_colors[[paste0("CNA.", gene)]] <-  c(amplification = "#E41A1C", deletion = "#377EB8", "neutral" = "grey")
+      #   }
+      #   if (paste0("mutation.", gene) %in% colnames(col_anno)) {
+      #     col_anno <- col_anno[order(col_anno[, paste0("mutation.", gene)], decreasing = T),]
+      #     ann_colors[[paste0("mutation.", gene)]] <- c(missense = "#E41A1C", truncation = "#377EB8", wild_type = "white", "missense&truncation" = "#6A3D9A", other_mutation = "#FF7F00", silent = "#33A02C")
+      #   }
+      # }
       
       # make the matrix of values showing in heatmap ----------------------------
       sup_tab_can <- NULL
@@ -421,9 +428,10 @@ for (pair in pairs2plot) {
   tab2p$position <- str_split_fixed(string = tab2p$position, pattern = '[a-z]', n = 2)[,1]
   tab2p$position <- as.numeric(as.vector(tab2p$position))
   tab2p$position_y <- tab2p$position - position_range[1]
-  tab2p$position_y[grepl(x = tab2p$Classification_complex, pattern = "Truncation")] <- (-20)
-  tab2p$position_y[tab2p$CNA.TP53 == "deletion" & is.na(tab2p$position)] <- (-40)
-  tab2p$position_y[tab2p$CNA.TP53 == "neutral" & is.na(tab2p$position)] <- (-60)
+  tab2p$position_y[grepl(x = tab2p$Classification_complex, pattern = "Truncation") | grepl(x = tab2p$HGVSp_Short, pattern = "splice") & !(tab2p$partID %in% tab2p$partID[tab2p$position_y > 0])] <- (-20)
+  tab2p$position_y[tab2p$CNA.TP53 == "deletion" & is.na(tab2p$position) & !(tab2p$partID %in% tab2p$partID[tab2p$position_y > 0])] <- (-40)
+  tab2p$position_y[grepl(x = tab2p$HGVSp_Short, pattern = "del") & !grepl(x = tab2p$HGVSp_Short, pattern = "fs") & !grepl(x = tab2p$Classification_complex, pattern = "Missense")] <- (-40)
+  tab2p$position_y[tab2p$CNA.TP53 == "neutral" & is.na(tab2p$position)  & !(tab2p$partID %in% tab2p$partID[tab2p$position_y > 0])] <- (-60)
   
   tab2p$x <- as.vector(tab2p$exp_value)
   tab2p$y <- tab2p$position_y
@@ -441,6 +449,7 @@ for (pair in pairs2plot) {
   }, tab2p = tab2p)
   control_exp_meds <- data.frame(control_exp_med = control_exp_med, cancer = names(control_exp_med))
   tab2p <- merge(tab2p, control_exp_meds, by = c("cancer"), all.x = T)
+  
   ## get the high quantile of expression values
   exp_high <- sapply(unique(tab2p$cancer), FUN = function(cancer, tab2p) {
     tab2p_can <- tab2p[tab2p$cancer == cancer,]
@@ -465,8 +474,9 @@ for (pair in pairs2plot) {
   tab2p$point_fill <- "grey50"
   tab2p$point_fill[tab2p$position_y > 0] <- "orange"
   tab2p$point_fill[(as.vector(tab2p$x) > as.vector(tab2p$exp_high)) & (tab2p$position_y > 0)] <- "red"
-  tab2p$point_fill[grepl(x = tab2p$Classification_complex, pattern = "Truncation") & (tab2p$position_y < 0)] <- "blue"
-  tab2p$point_fill[tab2p$CNA.TP53 == "deletion" & (tab2p$position_y < 0)] <- "lightblue"
+  tab2p$point_fill[(grepl(x = tab2p$Classification_complex, pattern = "Truncation") | grepl(tab2p$HGVSp_Short, pattern = "splice")) & (tab2p$position_y < 0)] <- "blue"
+  # tab2p$point_fill[tab2p$CNA.TP53 == "deletion" & (tab2p$position_y < 0)] <- "lightblue"
+  tab2p$point_fill[tab2p$position_y == -40] <- "lightblue"
   
   tab2p$cancer <- factor(tab2p$cancer, levels = c("LIHC", "BRCA", "OV", "CO", "UCEC", "CCRCC"))
   
@@ -476,7 +486,8 @@ for (pair in pairs2plot) {
   p = p + geom_vline(data = tab2p, mapping = aes(xintercept = control_exp_med), linetype = 2, color = "grey50", alpha = 0.5)
   p = p + geom_vline(data = tab2p, mapping = aes(xintercept = exp_high), linetype = 2, color = set1[1], alpha = 0.5)
   p = p + geom_vline(data = tab2p, mapping = aes(xintercept = exp_low), linetype = 2, color = set1[2], alpha = 0.5)
-  p = p + geom_text_repel(data = tab2p[(as.vector(tab2p$x) > as.vector(tab2p$exp_high)) & tab2p$position %in% hotspot_proximal,], 
+  # p = p + geom_text_repel(data = tab2p[(as.vector(tab2p$x) > as.vector(tab2p$exp_high)) & tab2p$position %in% hotspot_proximal,], 
+  p = p + geom_text_repel(data = tab2p[(as.vector(tab2p$x) > as.vector(tab2p$exp_high)),], 
                           mapping = aes(x=x, y=y, label= as.character(HGVSp_Short)), color = set1[1], segment.color = "black",
                           force = 4, segment.size = 1, segment.alpha = 0.6, size = 4, alpha = 0.8)
   p = p + geom_text_repel(data = tab2p[(as.vector(tab2p$x) < as.vector(tab2p$exp_low)) & tab2p$position %in% hotspot_proximal,], 
@@ -501,8 +512,6 @@ for (pair in pairs2plot) {
   
 }
 
-sup_tab %>%
-  tail()
 
 
 

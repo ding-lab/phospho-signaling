@@ -35,6 +35,27 @@ tf_tab <- fread(input = "./Ding_Lab/Projects_Current/TP53_shared_data/resources/
 
 ```
 
+## check the TFs known to interact with mutant p53
+```{r SP1}
+affected_TF_tmp <- "SP1"
+
+tf_tab %>%
+  filter(source_genesymbol == affected_TF_tmp) %>%
+  filter(target_genesymbol == "BCL2")
+
+mut_impact_tab %>%
+  filter(SUB_GENE == affected_TF_tmp & fdr < 0.05)
+
+mut_impact_tab %>%
+  filter(SUB_GENE %in% tf_tab$target_genesymbol[tf_tab$source_genesymbol == affected_TF_tmp & tf_tab$is_stimulation == 1] & fdr < 0.05 & SELF == "trans") %>%
+  arrange(fdr)
+
+mut_impact_tab %>%
+  filter(SUB_GENE %in% tf_tab$target_genesymbol[tf_tab$source_genesymbol == affected_TF_tmp & tf_tab$is_inhibition == 1] & fdr < 0.05 & SELF == "trans") %>%
+  arrange(fdr)
+
+```
+
 ```{r}
 mut_impact_tab %>%
   filter(GENE == "TP53" & SUB_GENE.is_kinase == T & SUB_GENE.is_downstream == T & fdr < 0.05)

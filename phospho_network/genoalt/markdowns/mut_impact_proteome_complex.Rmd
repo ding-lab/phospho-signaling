@@ -1,0 +1,66 @@
+---
+title: "Untitled"
+output: html_document
+---
+## source
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+setwd(baseD)
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+library(knitr)
+opts_knit$set(root.dir = baseD)
+```
+
+## inputs
+``` {r vairiables}
+num_genoalt_thres <- 5
+cancers2proces <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
+```
+
+```{r input-mut_impact_tab}
+mut_impact_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/genoalt/tables/test_SMG_mut_impact_proteome/SMG_mut_impact_tab.txt", data.table = F)
+mut_impact_tab <- mut_impact_tab %>%
+  mutate(pair_cat_signaling_sum = (SUB_GENE.is_TF_downstream + SUB_GENE.is_kinase_substrate + SUB_GENE.is_phosphatase_substrate + SUB_GENE.is_complex_partner))
+mut_impact_tab$GENE.is_SMG <- get_SMG_by_cancer(gene_vector = mut_impact_tab$GENE, cancer_vector = mut_impact_tab$cancer)
+```
+
+```{r check-complex-only}
+mut_impact_tab %>%
+  filter(fdr_by_gene < 0.05) %>%
+  filter(SUB_GENE.is_complex_partner == T) %>%
+  filter(affected_exp_type == "PRO") %>%
+  arrange(fdr_by_gene)
+```
+
+```{r input-mut-impact-second-degree-tab}
+mut_impact_second_degree_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/genoalt/tables/test_SMG_mut_impact_proteome_second_degree/SMG_mut_impact_tab.txt", data.table = F)
+mut_impact_second_degree_tab$GENE.is_SMG <- get_SMG_by_cancer(gene_vector = mut_impact_second_degree_tab$GENE, cancer_vector = mut_impact_second_degree_tab$cancer)
+
+mut_impact_second_degree_tab <- mut_impact_second_degree_tab %>%
+  mutate(node_previous = str_split_fixed(pair_pro_previous, pattern = ":", n = 2)[,2]) %>%
+  mutate(node_previous_SUB_GENE = paste0(node_previous, ":", SUB_GENE)) %>%
+  mutate(node_previous_SUB_MOD_RSD = paste0(node_previous, ":", SUB_GENE, ":", SUB_MOD_RSD)) %>%
+  mutate(pair_pro = paste0(GENE, ":", SUB_GENE))
+```
+
+```{r input-mut_impact-regression-substrates-tab}
+mut_impact_regulated_sites <- fread(input = "./cptac2p/analysis_results/phospho_network/genoalt/tables/test_SMG_mut_impact_proteome_regulated_phosphosites/SMG_mut_impact_tab.txt", data.table = F)
+mut_impact_regulated_sites$GENE.is_SMG <- get_SMG_by_cancer(gene_vector = mut_impact_regulated_sites$GENE, cancer_vector = mut_impact_regulated_sites$cancer)
+```
+
+
+```{r input-pair-table}
+pair_tab_annotated <- fread(input = "./cptac2p/analysis_results/dependencies/tables/compile_protein_pair_table/protein_pair_table.txt", data.table = F)
+colnames(pair_tab_annotated)
+pair_cat <- colnames(pair_tab_annotated)[!(colnames(pair_tab_annotated) %in% c("GENE", "SUB_GENE", "pair_pro"))]
+pair_cat
+pair_cat_signaling <- c("SUB_GENE.is_TF_downstream", "SUB_GENE.is_kinase_substrate", "SUB_GENE.is_phosphatase_substrate", "SUB_GENE.is_complex_partner")
+tf_tab <- fread(input = "./Ding_Lab/Projects_Current/TP53_shared_data/resources/PPI/TF_interactions.txt", data.table = F)
+
+```
+
+
+
+
+

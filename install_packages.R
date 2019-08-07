@@ -15,3 +15,12 @@ source("https://bioconductor.org/biocLite.R")
 biocLite("GO.db")
 biocLite("impute")
 biocLite("preprocessCore")
+
+for (pkg_name_tmp in c("survival", "survminer", "cmprsk", "data.table", "pheatmap")) {
+  if (!(pkg_name_tmp %in% installed.packages()[,1])) {
+    install.packages(pkg_name_tmp)
+  }
+}
+
+
+

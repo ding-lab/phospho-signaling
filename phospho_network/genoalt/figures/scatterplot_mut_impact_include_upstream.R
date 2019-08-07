@@ -2,10 +2,15 @@
 ## check regulated pairs
 
 # source ------------------------------------------------------------------
-source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_plotting.R')
-source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R')
-source('/Users/yigewu/Box Sync/cptac2p_analysis/dependencies/tables/load_TCGA_pathways.R')
-source('/Users/yigewu/Box Sync/cptac2p_analysis/expression_matrices/expression_shared.R')
+# source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_plotting.R')
+# source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R')
+code_top_dir <- "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phospho-signaling_analysis/"
+path2phospho_network_shared <- paste0(code_top_dir, "phospho_network/phospho_network_plotting.R")
+source(path2phospho_network_shared)
+source('./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phospho-signaling_analysis/expression_matrices/expression_shared.R')
+
+
+
 
 library(ggrepel)
 library(readxl)
@@ -17,7 +22,7 @@ sample_type2test <- names(my_comparisons)
 
 
 # plot mutation impact -----------------------------------------------------------
-resultDnow <- makeOutDir(resultD = resultD)
+resultDnow <- makeOutDir()
 
 ## decide on the kinase and substrate
 # enzyme <- "CTNNB1"; substrate <- "CDK6"; rsd <- "PRO"; enzyme_upstream <-  c("APC")
@@ -50,8 +55,18 @@ resultDnow <- makeOutDir(resultD = resultD)
 # enzyme <- "TP53"; substrate <- "ATR"; rsd <- "T1989"; enzyme_upstream <- NULL
 # enzyme <- "MTOR"; substrate <- "EIF4EBP1"; rsd <- "S70"; enzyme_upstream <-  c("PIK3CA")
 # enzyme <- "MTOR"; substrate <- "EIF4EBP1"; rsd <- "S65"; enzyme_upstream <-  c("PIK3CA")
-enzyme <- "AKT1"; substrate <- "LMNA"; rsd <- "S301"; enzyme_upstream <-  c("PIK3CA")
+# enzyme <- "AKT1"; substrate <- "LMNA"; rsd <- "S301"; enzyme_upstream <-  c("PIK3CA")
+# enzyme <- "TP53"; substrate <- "CDK1"; rsd <- "RNA"; enzyme_upstream <- NULL
+# enzyme <- "TP53"; substrate <- "ATR"; rsd <- "RNA"; enzyme_upstream <- NULL
+# enzyme <- "KEAP1"; substrate <- "KEAP1"; rsd <- "PRO"; enzyme_upstream <- c("NFE2L2")
+# enzyme <- "KEAP1"; substrate <- "NFE2L2"; rsd <- "PRO"; enzyme_upstream <- c("NFE2L2")
+enzyme <- "KEAP1"; substrate <- "NFE2L2"; rsd <- "S215"; enzyme_upstream <- c("NFE2L2")
+enzyme <- "KEAP1"; substrate <- "NFE2L2"; rsd <- "S433"; enzyme_upstream <- c("NFE2L2")
 
+pho_tab %>%
+  filter(Gene == "NFE2L2") %>%
+  select(Phosphosite) %>%
+  unique()
   
 ## make directory
 subdir1 <- paste0(resultDnow, enzyme, "/")
@@ -62,9 +77,8 @@ subdir3 <- paste0(subdir2, rsd, "/")
 dir.create(subdir3)
 
 ## do for each cancer type
-for (cancer in c("BRCA", "UCEC", "LIHC", "CO", "OV", "CCRCC")) {
-# for (cancer in c( "CCRCC")) {
-    
+# for (cancer in c("BRCA", "UCEC", "LIHC", "CO", "OV", "CCRCC")) {
+for (cancer in c( "UCEC")) {
   subdir4 <- paste0(subdir3, cancer, "/")
   dir.create(subdir4)
   
@@ -108,7 +122,8 @@ for (cancer in c("BRCA", "UCEC", "LIHC", "CO", "OV", "CCRCC")) {
 
   partIDs <- colnames(affected_exp_data)
   ## get mutation matrix
-  mut_mat <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_impact_proteome/", cancer, "_somatic_mutation.txt"), data.table = F)
+  maf <- loadMaf(cancer = cancer, maf_files = maf_files)
+  mut_mat <- generate_somatic_mutation_matrix(pair_tab = unique(c(enzyme, substrate, enzyme_upstream)), maf = maf)
   partIDs_overlap <- intersect(partIDs, colnames(mut_mat))
   
   ## get the patient IDs with enzyme alterations
@@ -119,7 +134,7 @@ for (cancer in c("BRCA", "UCEC", "LIHC", "CO", "OV", "CCRCC")) {
   if (!is.null(enzyme_upstream)) {
     upstream_mut_partIDs <- partIDs_overlap[colSums((mut_mat[mut_mat$Hugo_Symbol %in% enzyme_upstream, partIDs_overlap] != "") & (mut_mat[mut_mat$Hugo_Symbol %in% enzyme_upstream, partIDs_overlap] != "Silent")) > 0]
     if (length(upstream_mut_partIDs) < 4 ){
-      next()
+      # next()
     }
   } else {
     upstream_mut_partIDs <- NULL
@@ -160,8 +175,8 @@ for (cancer in c("BRCA", "UCEC", "LIHC", "CO", "OV", "CCRCC")) {
   df$is.outlier_low <- (df$sub_exp < substrate_exp_CI_low)
   
   ## take a look at outlier mutations
-  outlier_high_mut_mat <- mut_mat[mut_mat$Hugo_Symbol %in% c(enzyme, substrate, enzyme_upstream), df$partID[!is.na(df$is.outlier_high) & df$is.outlier_high]]
-  outlier_low_mut_mat <- mut_mat[mut_mat$Hugo_Symbol %in% c(enzyme, substrate, enzyme_upstream), df$partID[!is.na(df$is.outlier_low) & df$is.outlier_low]]
+  outlier_high_mut_mat <- mut_mat[mut_mat$Hugo_Symbol %in% c(enzyme, substrate, enzyme_upstream), intersect(colnames(mut_mat), df$partID[!is.na(df$is.outlier_high) & df$is.outlier_high])]
+  outlier_low_mut_mat <- mut_mat[mut_mat$Hugo_Symbol %in% c(enzyme, substrate, enzyme_upstream), intersect(colnames(mut_mat), df$partID[!is.na(df$is.outlier_low) & df$is.outlier_low])]
   
   ## add text
   maf <- loadMaf(cancer = cancer, maf_files = maf_files)
@@ -198,6 +213,8 @@ for (cancer in c("BRCA", "UCEC", "LIHC", "CO", "OV", "CCRCC")) {
   #                         force = 1, segment.size = 0.5, segment.alpha = 0.2, size = 2, alpha=0.6, position = pos)
   if (rsd == "PRO") {
     p = p + labs(y=paste0(substrate, " protein abundance(log2 ratio)"))
+  } else if (rsd == "RNA") {
+    p = p + labs(y=paste0(substrate, " RNA abundance(log2)"))
   } else {
     p = p + labs(y=paste0(substrate, " ", rsd, " phosphorylation\n(log2 ratio)"))
     
@@ -228,7 +245,7 @@ for (cancer in c("BRCA", "UCEC", "LIHC", "CO", "OV", "CCRCC")) {
     ggsave(file=fn, height= 3, width = 3*length(unique(tab2p$group))/2, useDingbats=FALSE)
   }
 
-stop("")
+# stop("")
   
   # ## test enzyme_mutation to control
   # if (length(tab2p$sub_exp[tab2p$group == "enzyme_mutation" & !is.na(tab2p$sub_exp)]) == 0) {

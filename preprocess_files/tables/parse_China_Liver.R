@@ -26,6 +26,8 @@ rownames(meta_tab) <- as.vector(meta_tab$partID)
 meta_tab$sampID.tumor <- str_split_fixed(string = meta_tab$Tumor..T..sample.ID, pattern = "T", 2)[,2]
 meta_tab$sampID.normal <- str_split_fixed(string = meta_tab$Adjacent.Non.tumor.liver.tissue..N..sample.ID, pattern = "N", 2)[,2]
 
+
+
 exclude_sampIDs <- c("")
 # rewrite proteomics/phosphoproteomics data split by tumor and normal ----------------------------------
 for (sample_type in c("tumor")) {

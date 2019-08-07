@@ -48,7 +48,9 @@ enzyme_sub_pair_tab <- unique(rbind(enzyme_sub_tab, enzyme_sub_tab_rev))
 
 # compile complex table ---------------------------------------------------
 ## input complex table
-complex_pair_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/compile_enzyme_substrate/tables/parse_corum_signor_reactome/sup_complex_pair_uniq.txt", data.table = F)
+# complex_pair_tab <- fread(input = "./cptac2p/analysis_results/phospho_network/compile_enzyme_substrate/tables/parse_corum_signor_reactome/sup_complex_pair_uniq.txt", data.table = F)
+complex_pair_tab <- fread(input = "./cptac2p/analysis_results/dependencies/tables/parse_corum_signor_reactome/reactome_corum_signor_complex_pair_uniq_v1.txt", data.table = F)
+
 ### reformat complex table
 complex_pair_tab <- data.frame(GENE = complex_pair_tab$geneA, SUB_GENE = complex_pair_tab$geneB)
 ## take out anything with TF relations
@@ -83,7 +85,7 @@ pair_tab <- pair_tab %>%
 
 # Make sure all SMGs are covered ------------------------------------------
 unlist(SMGs)[!(unlist(SMGs) %in% all_genes_involved)]
-
-write.table(x = pair_tab, file = paste0(makeOutDir(resultD = resultD), "protein_pair_table.txt"), quote = F, sep = "\t", row.names = F)
+# write.table(x = pair_tab, file = paste0(makeOutDir(resultD = resultD), "protein_pair_table.txt"), quote = F, sep = "\t", row.names = F)
+write.table(x = pair_tab, file = paste0(makeOutDir(resultD = resultD), "protein_pair_table_v2.txt"), quote = F, sep = "\t", row.names = F)
 
 

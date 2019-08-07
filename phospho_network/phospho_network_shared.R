@@ -12,17 +12,19 @@ library(ggrepel)
 library(dplyr)
 
 # source ------------------------------------------------------------------
-baseD = "/Users/yigewu/Box\ Sync/"
-wd <- getwd()
-if (wd != baseD) {
-  setwd(baseD)
-}
+baseD = "~/Box/"
+setwd(baseD)
+
 # folders <- strsplit(x = rstudioapi::getSourceEditorContext()$path, split = "\\/")[[1]]
 # baseD <- paste0(paste0(folders[1:which(folders == "Box Sync")], collapse = "/"), "/")
 # setwd(baseD)
-source("./cptac2p_analysis/cptac2p_analysis_shared.R")
+code_top_dir <- "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phospho-signaling_analysis/"
+path2cptac_shared <- paste0(code_top_dir, "cptac2p_analysis_shared.R")
+source(path2cptac_shared)
 
 # static parameters -------------------------------------------------------
+baseD = "~/Box/"
+setwd(baseD)
 ppnD <- paste0(resultD, "phospho_network/")
 
 ## significance level for FDR from regression model
@@ -33,10 +35,9 @@ reg_sig <- c(fdr_pp, fdr_pk)
 names(reg_sig) <- c("phosphatase", "kinase")
 
 # functions ---------------------------------------------------------------
-
-makeOutDir = function(resultD) {
+makeOutDir = function() {
   folders <- strsplit(x = rstudioapi::getSourceEditorContext()$path, split = "\\/")[[1]]
-  folder_num <- which(folders == "cptac2p_analysis") + 1
+  folder_num <- which(folders == "phospho-signaling_analysis") + 1
   resultDnow <- paste(strsplit(paste(folders[folder_num:length(folders)], collapse = "/"), split = "\\.")[[1]][1], sep = "/")
   resultDnow <- paste0(resultD, resultDnow, "/")
   dir.create(resultDnow)
@@ -263,24 +264,12 @@ load_mut_impact_proteome <- function() {
   return(mut_impact_tab)
 }
 
-load_ks_table <- function(protein) {
-  ## Usage: k_s_table <- load_ks_table({kinase/phosphatase})
-  if ( protein == "kinase" ) {
-    ### read in the kinase/substrate table/ phosphorylation data ###
-    k_s_table = read.delim(paste(pan3can_shared_dataD,"Phospho_databases/PhosphositePlus/data/Kinase_Substrate_Dataset_human_final_hugoified.txt",sep=""))
-    # k_s_table = read_table2(paste0(pan3can_shared_dataD,"Phospho_databases/PhosphositePlus/Aug_01_2018/Kinase_Substrate_Dataset"),  skip = 3)
-  }
-  
-  if ( protein == "phosphatase" ) {
-    ### read in the phosphatase/substrate table/ phosphorylation data ### 
-    k_s_table <- read.csv(paste(pan3can_shared_dataD,"Phospho_databases/DEPOD/DEPOD_201612_human_phosphatase-protein_substrate_to_Kuan-lin.csv",sep = ""))
-    colnames(k_s_table) <- c("Phosphatase_UniProtAC_human","GENE","Substrate_UniProtAC_ref","SUB_GENE","Substrate_Type","DephosphoSite","BioassayType", "PubMed_ID_rev")
-  }
-  return(k_s_table)
-}
 
 load_psp <- function() {
-  k_s_table = read.delim(paste(pan3can_shared_dataD,"Phospho_databases/PhosphositePlus/data/Kinase_Substrate_Dataset_human_final_hugoified.txt",sep=""))
+  # k_s_table = read.delim(paste(dir2cptac2_retrospective,"Phospho_databases/PhosphositePlus/data/Kinase_Substrate_Dataset_human_final_hugoified.txt",sep=""))
+  k_s_table = read.delim(paste(dir2phospho_signaling,"resources/Phospho_databases/PhosphositePlus/May_28_2019/Kinase_Substrate_Dataset",sep=""), skip = 3)
+  k_s_table <- k_s_table %>%
+    filter(KIN_ORGANISM == "human" & SUB_ORGANISM == "human")
   k_s_table$pair_pro <- paste0(k_s_table$GENE, ":", k_s_table$SUB_GENE)
   k_s_table$pair <- paste0(k_s_table$pair_pro, ":", k_s_table$SUB_MOD_RSD)
   return(k_s_table)
@@ -291,6 +280,61 @@ load_omnipath <- function() {
   k_s_table <- read_csv(paste0(ppnD, "compile_enzyme_substrate/tables/compile_omnipath_networkin_depod_signor_manual/Omnipath_NetworKin_DEPOD_SignorNotSiteMapped_manualAdded.csv"))
   k_s_table$pair_pro <- paste0(k_s_table$GENE, ":", k_s_table$SUB_GENE)
   k_s_table$pair <- paste0(k_s_table$pair_pro, ":", k_s_table$SUB_MOD_RSD)
+  return(k_s_table)
+}
+
+load_es_pro_table <- function(protein) {
+  omnipath_tab <- load_omnipath()
+  omnipath_tab_new <- fread(input = "./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Phospho_databases/OmniPath/July_25_2019/ptms.txt", data.table = F)
+  psp_tab <- load_psp()
+  omnipath_tab <- omnipath_tab %>%
+    filter(!(Source %in% c("PhosphoNetworks", "NetKIN", "MIMP"))) %>%
+    filter(GENE %in% c(kinases, phosphatases))
+  
+  omnipath_tab_new <- omnipath_tab_new %>%
+    filter(!(sources %in% c("PhosphoNetworks", "MIMP"))) %>%
+    filter(GENE %in% c(kinases, phosphatases))
+  
+  omnipath_tab <- data.frame(omnipath_tab)
+  
+  k_s_table <- rbind(omnipath_tab %>%
+                       select(GENE, SUB_GENE),
+                     psp_tab %>%
+                       select(GENE, SUB_GENE),
+                     omnipath_tab_new %>%
+                       mutate(GENE = enzyme_genesymbol, SUB_GENE = substrate_genesymbol) %>%
+                       select(GENE, SUB_GENE)) %>%
+    unique()
+  k_s_table <- rbind(k_s_table,
+                     data.frame(GENE = c("ATM", "ATR", 
+                                         "MAPK1", "MAPK8", "MAPK9", "MAPK14"),
+                                SUB_GENE = c("BAP1", "BAP1",
+                                             "NFE2L2", "NFE2L2", "NFE2L2", "NFE2L2")))
+  
+  return(k_s_table)
+}
+
+load_es_pro_with_predicted_table <- function(protein) {
+  omnipath_tab <- load_omnipath()
+  omnipath_tab_new <- fread(input = "./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Phospho_databases/OmniPath/July_25_2019/ptms.txt", data.table = F)
+  psp_tab <- load_psp()
+  
+  k_s_table <- rbind(omnipath_tab %>%
+                       filter(GENE %in% c(kinases, phosphatases)) %>%
+                       select(GENE, SUB_GENE),
+                     psp_tab %>%
+                       select(GENE, SUB_GENE),
+                     omnipath_tab_new %>%
+                       mutate(GENE = enzyme_genesymbol, SUB_GENE = substrate_genesymbol) %>%
+                       filter(GENE %in% c(kinases, phosphatases)) %>%
+                       select(GENE, SUB_GENE)) %>%
+    unique()
+  k_s_table <- rbind(k_s_table,
+                     data.frame(GENE = c("ATM", "ATR", 
+                                         "MAPK1", "MAPK8", "MAPK9", "MAPK14"),
+                                SUB_GENE = c("BAP1", "BAP1",
+                                             "NFE2L2", "NFE2L2", "NFE2L2", "NFE2L2")))
+  
   return(k_s_table)
 }
 
@@ -331,7 +375,9 @@ TK_list <- as.vector(TK_list$GENE)
 # Annotate regression table -----------------------------------------------
 annotate_enzyme_type  <- function(regression, kinases, phosphatases) {
   table2annotate <- regression
-  table2annotate$GENE <- table2annotate$KINASE
+  if (!("GENE" %in% colnames(table2annotate))) {
+    table2annotate$GENE <- table2annotate$KINASE
+  }
   
   table2annotate$enzyme_type <- NULL
   
@@ -359,6 +405,7 @@ pairs_cis_direct <- c(psp_tab$pair[psp_tab$pair_pro == "ERBB2:ERBB2"],
                       psp_tab$pair[psp_tab$pair_pro == "MET:MET"], 
                       psp_tab$pair[psp_tab$pair_pro == "PDGFRA:PDGFRA"], 
                       psp_tab$pair[psp_tab$pair_pro == "PIK3CG:PIK3CG"])
+
 annotate_ks_source <- function(regression) {
   table2annotate <- regression
   table2annotate$Source <- NULL
@@ -439,4 +486,4 @@ adjust_regression_by_nonNA <- function(regression, reg_nonNA, reg_sig) {
   return(table2mark)
 }
 
-
+omnipath_tab <- annotate_ks_source(regression = omnipath_tab)

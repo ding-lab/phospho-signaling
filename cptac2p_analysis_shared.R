@@ -21,37 +21,32 @@ cancer_full_names <- c("Breast Cancer", "Ovarian Cancer", "Colorectal Cancer"); 
 
 # heavily-used data paths ---------------------------------------------------------
 ## base directory at Box Sync
-baseD = "/Users/yigewu/Box\ Sync/"
-wd <- getwd()
-if (wd != baseD) {
-  setwd(baseD)
-}
-# folders <- strsplit(x = rstudioapi::getSourceEditorContext()$path, split = "\\/")[[1]]
-# baseD <- paste0(paste0(folders[1:which(folders == "Box Sync")], collapse = "/"), "/")
-# setwd(baseD)
-# setwd(baseD)
+baseD = "~/Box/"
+setwd(baseD)
+dir2dinglab_projects <- paste0(baseD, "Ding_Lab/Projects_Current/")
 
 ## CPTAC2 prospective and CPTAC proteomics data
-cptac_sharedD <- "./Ding_Lab/Projects_Current/CPTAC/cptac_shared/"
+dir2cptac_shared <- paste0(dir2dinglab_projects, "CPTAC/cptac_shared/")
+dir2cptac_pgdac <- paste0(dir2dinglab_projects, "CPTAC/PGDAC/")
 
 ## CPTAC2 prospective genomics data
-cptac2pD <- "./Ding_Lab/Projects_Current/CPTAC/CPTAC_Prospective_Samples/"
-cptac2p_genomicD <- "./Ding_Lab/Projects_Current/CPTAC/CPTAC_Prospective_Samples/"
+dir2cptac2_prospective <- paste0(dir2dinglab_projects, "CPTAC/CPTAC_Prospective_Samples/")
 
 ## CPTAC2 retrospective proteomics/genomics data
-pan3can_shared_dataD <- paste0("./Ding_Lab/Projects_Current/CPTAC/pan3can_shared_data/")
+dir2cptac2_retrospective <- paste0(dir2dinglab_projects, "CPTAC/pan3can_shared_data/")
 
 ## processed data directory
-resultD <- "./cptac2p/analysis_results/"
+dir2phospho_signaling <- paste0(dir2dinglab_projects, "PanCan_Phospho-signaling/")
+resultD <- paste0(dir2phospho_signaling, "analysis_results/")
 preprocess_filesD <- paste0(resultD, "preprocess_files/")
 
 ## the path to scripts relating to phospho-signaling
 ppnD <- paste0(resultD, "phospho_network/")
 
-maf_files <- list.files(path = paste0(cptac2p_genomicD, "Somatic/"))
+maf_files <- list.files(path = paste0(dir2cptac2_prospective, "Somatic/"))
 
-#list.files(path = paste0(cptac2p_genomicD, "FPKM/08092018/"), recursive = T)
-fpkm_files <- paste0(cptac2p_genomicD, "FPKM/08092018/", 
+#list.files(path = paste0(dir2cptac2_prospective, "FPKM/08092018/"), recursive = T)
+fpkm_files <- paste0(dir2cptac2_prospective, "FPKM/08092018/", 
                      c("fpkm_prospective_breastcancer_110617_swap_corrected.csv",
                        "fpkm_ov_allgenes.011718.csv",
                        "fpkm_crc_allgenes.v1.0.10232017.csv"))
@@ -89,6 +84,7 @@ SMGs[["UCEC"]] <- c("FLNA",
   "PTEN")
 SMGs[["CCRCC"]] <- c("VHL", "PBRM1", "SETD2", "KDM5C", "PTEN", "BAP1", "MTOR", "TP53")
 SMGs[["LIHC"]] <- c("TP53", "AXIN1", "RB1", "CTNNB1", "ARID1A", "ARID2", "BAP1", "NFE2L2", "KEAP1", "ALB", "APOB")
+SMGs[["LUAD"]] <- c("KRAS", "EGFR", "BRAF", "ROS1", "ALK", "RET", "MAP2K1", "HRAS", "NRAS", "MET", "ERBB2", "RIT1", "NF1")
 
 ## significant SCNA
 # CNAs <- list()
@@ -134,7 +130,7 @@ loadMSIMap <- function() {
 }
 
 loadPAM50Map <- function() {
-  file <- fread(paste0(cptac_sharedD, "BRCA/fpkm_pam50_brca_080718_pam50scores_swap_corrected.txt"), data.table = F)
+  file <- fread(paste0(dir2cptac_shared, "BRCA/fpkm_pam50_brca_080718_pam50scores_swap_corrected.txt"), data.table = F)
   return(file)
 }
 
@@ -189,34 +185,51 @@ partID2UCECsubtype = function(patientID_vector) {
   return(subtypes)
 }
 
+partID2CCRCCImmune = function(patientID_vector) {
+  subtype_map <- fread(input = paste0(resultD, "phospho_network/druggability/figures/heatmap_mutation_CNA_RNA_PRO_PHO_cascade_for_ccRCC/CCRCC/CPTAC3_ccRCC_discovery_set_sample_annotation.csv"), data.table = F, sep = ",")
+  partIDs <- patientID_vector
+  subtypes <- NULL
+  for (partID in partIDs) {
+    subtype <- unique(as.character(subtype_map$immune_group[subtype_map$partID == partID]))
+    subtype <- subtype[!is.na(subtype)]
+    if (length(subtype) > 0) {
+      subtypes <- c(subtypes, subtype)
+    } else {
+      subtypes <- c(subtypes, "no_subtype_info")
+    }
+  }
+  names(subtypes) <- partIDs
+  
+  return(subtypes)
+}
+
 # loadpam50fromclinTab <- function() {
-#   file <- read_excel(paste0(cptac_sharedD, "5_CPTAC2_Breast_Prospective_Collection_BI/proteome-data-v1.01011/data/20171106_CPTAC2_ProspectiveBreastCancer_Sample_Annotations_Table_v79.xlsx"))
+#   file <- read_excel(paste0(dir2cptac_shared, "5_CPTAC2_Breast_Prospective_Collection_BI/proteome-data-v1.01011/data/20171106_CPTAC2_ProspectiveBreastCancer_Sample_Annotations_Table_v79.xlsx"))
 #   return(file)
 # }
 
 
 # load data functions -----------------------------------------------------
 loadSampMap <- function() {
-  file <- fread(input = paste0(cptac_sharedD, "Specimen_Data_20161005_Yige_20180815.txt"), data.table = F, sep = "\t")
+  file <- fread(input = paste0(dir2cptac_shared, "Specimen_Data_20161005_Yige_20180815.txt"), data.table = F, sep = "\t")
   return(file)
 }
 
 loadMaf <- function(cancer, maf_files) {
   if (cancer %in% c("BRCA", "OV", "CO")) {
-    maf <- fread(input = paste0("./Ding_Lab/Projects_Current/CPTAC/CPTAC_Prospective_Samples/Somatic/", maf_files[grepl(x = maf_files, pattern = cancer)]), data.table = F, fill=TRUE)
+    maf <- fread(input = paste0(dir2cptac2_prospective, "Somatic/", maf_files[grepl(x = maf_files, pattern = cancer)]), data.table = F, fill=TRUE)
   } else if (cancer %in% c("UCEC")) {
-    maf <- fread(input = "./Ding_Lab/Projects_Current/CPTAC/PGDAC/Endometrium_CPTAC3/01_Data_tables/Baylor_DataFreeze_V2/UCEC_somatic_mutation_site_level_V2.0.maf", data.table = F, fill=TRUE)
+    maf <- fread(input = paste0(dir2cptac_pgdac, "Endometrium_CPTAC3/01_Data_tables/Baylor_DataFreeze_V2/UCEC_somatic_mutation_site_level_V2.0.maf"), data.table = F, fill=TRUE)
   } else if (cancer %in% c("CCRCC")) {
-    maf <- fread(input = "./Ding_Lab/Projects_Current/CPTAC/CPTACIII/CCRCC_AWG/CCRCC_shared_data/Somatic_Variants/ccrcc.somatic.consensus.gdc.umichigan.wu.112918.maf", data.table = F, fill=TRUE) 
+    maf <- fread(input = paste0(dir2cptac_pgdac, "ccRCC_discovery_manuscript/ccRCC_expression_matrices/Somatic_Variants/ccrcc.somatic.consensus.gdc.umichigan.wu.112918.maf"), data.table = F, fill=TRUE) 
   } else if (cancer  == "LIHC") {
-    maf <- fread(input = "./cptac2p/analysis_results/preprocess_files/tables/parse_China_Liver/LIHC_AllSamples.filtered.mutect2.partID.maf", data.table = F, fill=TRUE) 
+    maf <- fread(input = paste0(resultD, "preprocess_files/tables/parse_China_Liver/LIHC_AllSamples.filtered.mutect2.partID.maf"), data.table = F, fill=TRUE) 
   }
   maf <- data.frame(maf)
   print(paste0("MAF has ", nrow(maf), " lines\n"))
   
   return(maf)
 }
-
 
 # Load cBioPortal data ----------------------------------------------------
 cBioPortalD <- "./Ding_Lab/Projects_Current/cBioPortal/"
@@ -300,7 +313,7 @@ loadTCGARNA <- function(cancer) {
 }
 
 loadTCGARPPA <- function(cancer, expression_type) {
-  file_tmp <- paste0("./cptac2p/analysis_results/preprocess_files/tables/parse_TCGA_data/", cancer, "_", expression_type, "_tumor_TCGA_RPPA_partID.txt")
+  file_tmp <- paste0(resultD, "preprocess_files/tables/parse_TCGA_data/", cancer, "_", expression_type, "_tumor_TCGA_RPPA_partID.txt")
   tab_tmp <- read_delim(file = file_tmp, 
                          "\t", escape_double = FALSE, trim_ws = TRUE)
   return(tab_tmp)
@@ -315,10 +328,10 @@ generate_somatic_mutation_matrix <- function(pair_tab, maf) {
   nrow(maf)
   maf$sampID <- str_split_fixed(string = maf$Tumor_Sample_Barcode, pattern = "_", 2)[,1]
   
-  mut_mat <- dcast(data = maf, Hugo_Symbol ~ sampID, fun =  function(x) {
+  mut_mat <- reshape2::dcast(data = maf, Hugo_Symbol ~ sampID, fun =  function(x) {
     variant_class <- paste0(unique(x), collapse = ",")
     return(variant_class)
-  },value.var = "Variant_Classification", drop=TRUE)
+  }, value.var = "Variant_Classification", drop=FALSE)
   rownames(mut_mat) <- as.vector(mut_mat$Hugo_Symbol)
   return(mut_mat)
 }
@@ -329,15 +342,15 @@ del_thres_cans <- c(log2(0.9), log2(0.9), log2(0.9), -0.2, -0.1, -0.8); names(de
 
 loadCNA <- function(cancer) {
   ## input CNA values
-  if (cancer %in% c("BRCA", "OV", "BRCA")) {
+  if (cancer %in% c("BRCA", "OV", "CO")) {
     ### if it is breast cancer data, irregular columns names actually won't overlap with proteomics data
-    cna <- fread(input = paste0(cptac2p_genomicD, "copy_number/gatk/v1.3.swap_contamination_fixed/prospective_somatic/gene_level/v1.3.CPTAC2_prospective.2018-03-19/", toupper(substr(cancer, start = 1, stop = 2)), "/gene_level_CNV.", substr(cancer, start = 1, stop = 2), ".v1.3.2018-03-19.tsv"), data.table = F)
+    cna <- fread(input = paste0(dir2cptac2_prospective, "copy_number/gatk/v1.3.swap_contamination_fixed/prospective_somatic/gene_level/v1.3.CPTAC2_prospective.2018-03-19/", toupper(substr(cancer, start = 1, stop = 2)), "/gene_level_CNV.", substr(cancer, start = 1, stop = 2), ".v1.3.2018-03-19.tsv"), data.table = F)
   }
   if (cancer %in% c("UCEC", "CCRCC")) {
-    cna <- fread(input = paste0("./cptac2p/analysis_results/preprocess_files/tables/parse_", cancer, "_data_freeze/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
+    cna <- fread(input = paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
   }
   if (cancer %in% c("LIHC")) {
-    cna <- fread(input = paste0("./cptac2p/analysis_results/preprocess_files/tables/parse_", "China_Liver", "/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
+    cna <- fread(input = paste0(resultD, "preprocess_files/tables/parse_", "China_Liver", "/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
   }
   return(cna)
 }
@@ -346,13 +359,13 @@ loadCNAstatus <- function(cancer) {
   ## input CNA values
   if (cancer %in% c("BRCA", "OV", "CO")) {
     ### if it is breast cancer data, irregular columns names actually won't overlap with proteomics data
-    cna <- fread(input = paste0(cptac2p_genomicD, "copy_number/gatk/v1.3.swap_contamination_fixed/prospective_somatic/gene_level/v1.3.CPTAC2_prospective.2018-03-19/", toupper(substr(cancer, start = 1, stop = 2)), "/gene_level_CNV.", substr(cancer, start = 1, stop = 2), ".v1.3.2018-03-19.tsv"), data.table = F)
+    cna <- fread(input = paste0(dir2cptac2_prospective, "copy_number/gatk/v1.3.swap_contamination_fixed/prospective_somatic/gene_level/v1.3.CPTAC2_prospective.2018-03-19/", toupper(substr(cancer, start = 1, stop = 2)), "/gene_level_CNV.", substr(cancer, start = 1, stop = 2), ".v1.3.2018-03-19.tsv"), data.table = F)
   }
   if (cancer %in% c("UCEC", "CCRCC")) {
-    cna <- fread(input = paste0("./cptac2p/analysis_results/preprocess_files/tables/parse_", cancer, "_data_freeze/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
+    cna <- fread(input = paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
   }
   if (cancer %in% c("LIHC")) {
-    cna <- fread(input = paste0("./cptac2p/analysis_results/preprocess_files/tables/parse_", "China_Liver", "/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
+    cna <- fread(input = paste0(resultD, "preprocess_files/tables/parse_", "China_Liver", "/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
   }
   cna_head <- cna$gene
   cna_mat <- cna[, colnames(cna)[!(colnames(cna) %in% "gene")]]
@@ -383,7 +396,7 @@ loadRNA <- function(cancer) {
   if (cancer == "LIHC") {
     rna_fn <- "LIHC_RNA_tumor_PGDAC_RSEM_partID.txt"
   }
-  rna_tab <- fread(input = paste0("./Ding_Lab/Projects_Current/TP53_shared_data/resources/rna/", rna_fn), data.table = F)
+  rna_tab <- fread(input = paste0(dir2dinglab_projects, "TP53_shared_data/resources/rna/", rna_fn), data.table = F)
   
   colnames(rna_tab)[1] <- "gene"
   if (cancer %in% c("BRCA", "OV", "CO", "CCRCC", "LIHC")) {
@@ -401,19 +414,21 @@ loadParseProteomicsData <- function(cancer, expression_type, sample_type, pipeli
   ## pipeline_type: CDAP or PGDAC
   ## norm_type: unnormalized or scaled
   if (cancer %in% c("BRCA", "OV", "CO")) {
-    dir1 <- paste0("./cptac2p/analysis_results/preprocess_files/tables/parse_cptac2p_3can_data/")
+    dir1 <- paste0(resultD, "preprocess_files/tables/parse_cptac2p_3can_data/")
   } else if (pipeline_type == "PGDAC") {
     if (cancer == "LIHC") {
-      if (expression_type == "PRO" | expression_type == "collapsed_PHO") {
-        dir1 <- paste0("./cptac2p/analysis_results/preprocess_files/tables/parse_China_Liver", "/")
+      if (expression_type == "collapsed_PHO") {
+        dir1 <- paste0(resultD, "preprocess_files/tables/parse_China_Liver", "/")
       } else {
-        dir1 <- paste0("./cptac2p/analysis_results/preprocess_files/tables/parse_China_Liver_log2_noimputation_NA50_median", "/")
+        dir1 <- paste0(resultD, "preprocess_files/tables/parse_China_Liver_log2_noimputation_NA50_median", "/")
       }
+    } else if (cancer == "LUAD") {
+      dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze" , "/")
     } else {
-      dir1 <- paste0("./cptac2p/analysis_results/preprocess_files/tables/parse_", cancer, "_data_freeze", ifelse(cancer == "UCEC", "_v2", "") , "/")
-    }
+      dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze", ifelse(cancer == "UCEC", "_v2", "") , "/")
+    } 
   } else if (pipeline_type == "CDAP") {
-    dir1 <- paste0("./cptac2p/analysis_results/preprocess_files/tables/parse_", cancer, "_CDAP_data/")
+    dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_CDAP_data/")
   }
   exp_data <- fread(input = paste0(dir1, cancer, "_", expression_type, "_", sample_type, "_", pipeline_type, "_", norm_type, "_", "partID", ".txt"), data.table = F)
   return(exp_data)
@@ -429,9 +444,9 @@ loadProteinNormalizedTumor <- function(cancer) {
   if (cancer %in% c("BRCA", "OV", "CO")) {
     pro <- fread(input = paste0("./Ding_Lab/Projects_Current/CPTAC/cptac_shared/", cancer, "/", prefix[cancer], "_PRO_formatted_normalized_noControl.txt"), data.table = F)
   } else if (cancer == "UCEC") {
-    pro <- fread(input = "./cptac2p/analysis_results/preprocess_files/tables/parse_UCEC_data_freeze/UCEC_proteomics_V1.cct.formatted.tumor.txt", data.table = F)
+    pro <- fread(input = paste0(resultD, "preprocess_files/tables/parse_UCEC_data_freeze/UCEC_proteomics_V1.cct.formatted.tumor.txt"), data.table = F)
   } else if (cancer == "CCRCC") {
-    pro <- fread(input = "./cptac2p/analysis_results/preprocess_files/tables/parse_UCEC_data_freeze/UCEC_proteomics_V1.cct.formatted.tumor.txt", data.table = F)
+    pro <- fread(input = paste0(resultD, "preprocess_files/tables/parse_UCEC_data_freeze/UCEC_proteomics_V1.cct.formatted.tumor.txt"), data.table = F)
   }
   return(pro)
 }
@@ -460,7 +475,7 @@ loadPhosphositeNormalizedTumor <- function(cancer) {
 
 loadGeneList = function(gene_type, cancer, is.soft.limit) {
   if (gene_type == "RTK") {
-    RTK_file = read.table(paste(pan3can_shared_dataD,"reference_files/RTKs_list.txt",sep = ""))
+    RTK_file = read.table(paste(dir2cptac2_retrospective,"reference_files/RTKs_list.txt",sep = ""))
     genelist <- as.vector(t(RTK_file))
   }
   driver_table <- read_excel("./Ding_Lab/Projects_Current/TCGA_data/gene_lists/mmc1.xlsx", 

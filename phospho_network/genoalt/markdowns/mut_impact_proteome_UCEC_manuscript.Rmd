@@ -1,0 +1,161 @@
+---
+title: "Untitled"
+output: html_document
+---
+## source
+
+```{r setup, include=FALSE}
+baseD = "/Users/yigewu/Box\ Sync/"
+setwd(baseD)
+library(knitr)
+opts_knit$set(root.dir = baseD)
+source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+
+```
+
+## inputs
+``` {r vairiables}
+num_genoalt_thres <- 5
+cancers2proces <- c("BRCA", "OV", "CO", "UCEC", "CCRCC")
+```
+
+```{r input-mut_impact_tab}
+mut_cnv_cans <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_impact_proteome/mut_impact_proteome_RNA_cptac2p_cptac3_tab.txt"), data.table = F, sep = "\t")
+regulatory_sites <- fread(input = "./Ding_Lab/Projects_Current/CPTAC/pan3can_shared_data/Phospho_databases/PhosphositePlus/Mar_04_2019/Regulatory_sites", data.table = F)
+regulatory_sites <- regulatory_sites %>%
+  mutate(SUB_MOD_RSD = str_split_fixed(string = MOD_RSD, pattern = "-", n = 2)[,1])
+regulatory_sites2merge <- regulatory_sites %>%
+  select(GENE, SUB_MOD_RSD, ON_FUNCTION, ON_PROCESS, ON_PROT_INTERACT, ON_OTHER_INTERACT) %>%
+  unique
+mut_cnv_cans <- merge(mut_cnv_cans, regulatory_sites2merge, by.x = c("SUB_GENE", "SUB_MOD_RSD"), by.y = c("GENE", "SUB_MOD_RSD"), all.x = T)
+
+```
+
+```{r number-cis-trans}
+mut_cnv_cans %>%
+  filter(cancer == "UCEC") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(SELF == "cis") %>%
+  filter(GENE %in% SMGs[["UCEC"]]) %>%
+  filter(p < 0.05) %>%
+  filter(variant_class == "not_silent") %>%
+  filter(num >= 5) %>%
+  unique() %>%
+  nrow()
+
+mut_cnv_cans %>%
+  filter(cancer == "UCEC") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(SELF == "cis") %>%
+  filter(GENE %in% SMGs[["UCEC"]]) %>%
+  filter(variant_class == "not_silent") %>%
+  filter(num >= 5) %>%
+  unique() %>%
+  nrow()
+
+mut_cnv_cans %>%
+  filter(cancer == "UCEC") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(SELF == "cis") %>%
+  filter(GENE %in% SMGs[["UCEC"]]) %>%
+  filter(p < 0.05) %>%
+  filter(variant_class == "not_silent") %>%
+  filter(num >= 5) %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+mut_cnv_cans %>%
+  filter(cancer == "UCEC") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(SELF == "cis") %>%
+  filter(GENE %in% SMGs[["UCEC"]]) %>%
+  filter(variant_class == "not_silent") %>%
+  filter(num >= 5) %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+mut_cnv_cans %>%
+  filter(cancer == "UCEC") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(SELF == "trans") %>%
+    filter(GENE %in% SMGs[["UCEC"]]) %>%
+  filter(p < 0.05) %>%
+  filter(variant_class == "not_silent") %>%
+  filter(num >= 5) %>%
+  unique() %>%
+  nrow()
+
+mut_cnv_cans %>%
+  filter(cancer == "UCEC") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(SELF == "trans") %>%
+    filter(GENE %in% SMGs[["UCEC"]]) %>%
+  filter(variant_class == "not_silent") %>%
+  filter(num >= 5) %>%
+  unique() %>%
+  nrow()
+
+mut_cnv_cans %>%
+  filter(cancer == "UCEC") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% SMGs[["UCEC"]]) %>%
+  filter(variant_class == "not_silent") %>%
+  filter(num >= 5) %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+mut_cnv_cans %>%
+  filter(cancer == "UCEC") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% SMGs[["UCEC"]]) %>%
+  filter(variant_class == "not_silent") %>%
+  filter(num >= 5) %>%
+  filter(p < 0.05) %>%
+  select(GENE) %>%
+  unique() %>%
+  nrow()
+
+mut_cnv_cans %>%
+  filter(cancer == "UCEC") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% SMGs[["UCEC"]]) %>%
+  filter(variant_class == "not_silent") %>%
+  filter(num >= 5) %>%
+  filter(p < 0.05) %>%
+  select(GENE) %>%
+  unique() %>%
+  arrange(GENE)
+
+mut_cnv_cans %>%
+  filter(cancer == "UCEC") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(SELF == "cis") %>%
+  filter(GENE %in% SMGs[["UCEC"]]) %>%
+  filter(variant_class == "not_silent") %>%
+  filter(num >= 5) %>%
+  filter(p < 0.05) %>%
+  select(GENE) %>%
+  unique() %>%
+  arrange(GENE)
+
+```
+
+```{r CTNNB1}
+mut_cnv_cans %>%
+  filter(cancer == "UCEC") %>%
+  filter(affected_exp_type %in% c("PRO", "PHO")) %>%
+  filter(SELF == "trans") %>%
+  filter(GENE %in% SMGs[["UCEC"]]) %>%
+  filter(variant_class == "not_silent") %>%
+  filter(num >= 5) %>%
+  filter(p < 0.05) %>%
+  filter(GENE == "CTNNB1") %>%
+  filter(!is.na(ON_FUNCTION) | !is.na(ON_PROCESS) | !is.na(ON_PROT_INTERACT) | !is.na(ON_OTHER_INTERACT)) %>%
+  arrange(p)
+```

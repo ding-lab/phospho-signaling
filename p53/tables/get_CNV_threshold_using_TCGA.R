@@ -75,7 +75,7 @@ amp_threshold <- log2(1.1)
 # business ----------------------------------------------------------------
 del_pct_df_sup <- NULL
 # for (cancer in c("UCEC", "CCRCC", "LIHC", "CO", "BRCA", "OV")) {
-for (cancer in c("CCRCC")) {
+for (cancer in c("BRCA")) {
   ## input CPTAC CNVs
   if (cancer %in% c("UCEC", "CCRCC", "LIHC")) {
     cptac_tbl <- fread(input = paste0("../../../TP53_shared_data/resources/Somatic_Copy_Number/somatic_CNA." , cancer, ".partID.txt"), data.table = F)
@@ -104,8 +104,6 @@ for (cancer in c("CCRCC")) {
     tcga_tbl <- fread(file = paste0(cbioportalD, cancer, "/", "ov_tcga_pan_can_atlas_2018", "/data_CNA.txt"), data.table = F)
     tcga_tbl <- tcga_tbl[!is.na(tcga_tbl$Hugo_Symbol),]
   }
-  
-  
   
   breaks <- seq(-1.5, 0, 0.05)
   del_pct <- NULL

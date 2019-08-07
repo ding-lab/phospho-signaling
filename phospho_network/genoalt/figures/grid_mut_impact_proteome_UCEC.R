@@ -57,6 +57,7 @@ smg_cancer <- c("FLNA",
                 "PIK3CA",
                 "PTEN")
 
+
 for (variant_class in c("not_silent", "missense", "truncation")) {
   # plot protein section ----------------------------------------------------
   affected_exp_type <- "PRO"
@@ -66,7 +67,21 @@ for (variant_class in c("not_silent", "missense", "truncation")) {
     for (genoalt_type in c("mut")) {
       # mut_cnv_cans <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_impact_proteome/", cancer,"_mut_impact_", affected_exp_type , "_tab.txt"), data.table = F, sep = "\t")
       mut_cnv_cans <- fread(input = paste0(ppnD, "genoalt/tables/test_mut_impact_proteome/", cancer, "_", variant_class, "_mut_impact_", affected_exp_type , "_tab.txt"), data.table = F, sep = "\t")
+      mut_cnv_cans %>%
+        select(SUB_MOD_RSD) %>%
+        unique()
       
+      mut_cnv_cans %>%
+        filter(p > 0, p < 0.1) %>%
+        filter(SELF == "cis") %>%
+        nrow()
+      
+      mut_cnv_cans %>%
+        filter(p > 0, p < 0.1) %>%
+        filter(SELF == "cis") %>%
+        head()
+      
+      vstop("")
       mut_cnv_cans <- mut_cnv_cans[mut_cnv_cans$num >= num_genoalt_thres,]
       
       ## annotate the substrates

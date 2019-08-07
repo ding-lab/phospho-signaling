@@ -1,0 +1,67 @@
+# Yige Wu @ WashU 2018 Jan
+# draw volcano plots for regression result (3 cancer types together)
+
+# choose kinase/phosphotase, cancer , significance level, model -----------------------------------------------
+protein <- "kinase"
+# protein <- "phosphotase"
+out_thres <- 1.5
+
+
+# input -------------------------------------------------------------------
+source('/Users/yigewu/Box Sync/cptac2p_analysis/phospho_network/phospho_network_shared.R')
+source(paste0(baseD, "cptac2p_analysis/pan3can_aes.R")) # aes for general purposes; it should be one directory out of the working directory
+resultDnow <- makeOutDir()
+tn = paste0(resultD,"regression/tables/",protein,"_substrate_regression_cptac2p_3can.txt")
+df <- read.delim(file = tn)
+
+
+# process input -----------------------------------------------------------
+df <- markVadRetro(df, sig_thres = sig, protein_type = "kinase")
+color_map <- c("firebrick1", "black")
+names(color_map) <- c("TRUE", "FALSE")
+
+# set parameters for plotting
+if ( protein == "kinase") {
+  plot_fdr_scale <- 5
+}
+if ( protein == "phosphotase") {
+  plot_fdr_scale <- 2
+}
+
+
+# cis volcano plotting module -------------------------------------------------
+table_cis_outlier_removed_m = df[df$SELF=="cis",]
+table_cis_outlier_removed_m$coef_pro_kin_filtered = remove_outliers(table_cis_outlier_removed_m$coef_pro_kin, out_thres = out_thres)
+table_cis_outlier_removed_m = table_cis_outlier_removed_m[!is.na(table_cis_outlier_removed_m$coef_pro_kin_filtered),]
+table_cis_outlier_removed_m$Cancer_f <- factor(table_cis_outlier_removed_m$Cancer, levels = c("BRCA", "OV", "CO"))
+p = ggplot(table_cis_outlier_removed_m,aes(x=coef_pro_kin, y=-log10(FDR_pro_kin)))
+p = p + facet_grid(SELF~Cancer_f,scales = "free_y")#, drop=T, space = "free_y",scales = "free_y")#, space = "free", scales = "free")
+p = p + geom_point(alpha=0.05 ,  stroke = 0 , color = "grey")
+p = p + geom_text(aes(label= ifelse(-log10(FDR_pro_kin)>plot_fdr_scale, as.character(pair), NA), color = vad_retro_sitewise),size=1.5,alpha=0.5)
+p = p + theme_bw() #+ theme_nogrid()
+p = p + geom_vline(xintercept = 0, color = 'grey')
+p = p + theme(axis.title = element_text(size=10), axis.text.x = element_text(colour="black", size=6,angle=90, vjust=0.5), axis.text.y = element_text(colour="black", size=10))#element_text(colour="black", size=14))
+p = p + labs(x = "Coefficient for kinase protein expression", y="-log10(FDR)")
+p = p + scale_color_manual(values = color_map)
+p
+fn = paste(resultDnow,'Cis_',protein,'_substrate_volcano_cptac2p_3can_retro_marked.pdf',sep ="")
+ggsave(file=fn, height=6, width=15, useDingbats=FALSE)
+
+# trans volcano plotting module -------------------------------------------------
+table_trans_outlier_removed_m = df[df$SELF=="trans",]
+table_trans_outlier_removed_m$coef_pho_kin_filtered = remove_outliers(table_trans_outlier_removed_m$coef_pho_kin, out_thres = out_thres)
+table_trans_outlier_removed_m = table_trans_outlier_removed_m[!is.na(table_trans_outlier_removed_m$coef_pho_kin_filtered),]
+table_trans_outlier_removed_m$Cancer_f <- factor(table_trans_outlier_removed_m$Cancer, levels = c("BRCA", "OV", "CO"))
+p = ggplot(table_trans_outlier_removed_m,aes(x=coef_pho_kin, y=-log10(FDR_pho_kin)))
+p = p + facet_grid(SELF~Cancer_f,scales = "free_y")#, drop=T, space = "free_y",scales = "free_y")#, space = "free", scales = "free")
+p = p + geom_point(alpha=0.05 ,  stroke = 0 )
+p = p + geom_text(aes(label= ifelse(-log10(FDR_pho_kin)>plot_fdr_scale, as.character(pair), NA), color = vad_retro_sitewise),size=1.5,alpha=0.5)
+p = p + theme_bw() #+ theme_nogrid()
+p = p + geom_vline(xintercept = 0, color = 'grey')
+p = p + theme(axis.title = element_text(size=10), axis.text.x = element_text(colour="black", size=6,angle=90, vjust=0.5), axis.text.y = element_text(colour="black", size=10))
+p = p + labs(x = "Coefficient for kinase phosphorylation level", y="-log10(FDR)")
+p = p + scale_color_manual(values = color_map)
+p
+fn = paste(resultDnow, 'Trans_',protein,'_substrate_volcano_cptac2p_3can_retro_marked.pdf',sep ="")
+ggsave(file=fn, height=6, width=15, useDingbats=FALSE)
+
