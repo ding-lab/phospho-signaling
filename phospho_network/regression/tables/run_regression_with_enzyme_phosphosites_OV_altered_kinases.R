@@ -12,7 +12,7 @@ version_num <- 1
 
 # set variables -----------------------------------------------------------
 least_samples <- 5# least number of samples with complete data for each model
-datasets2process <- matrix(data = c("UCEC", "PGDAC", "tumor", "median_polishing", "cptac3"), ncol = 5, byrow = T)
+datasets2process <- matrix(data = c("OV", "CDAP", "tumor", "scaled", "cptac2p"), ncol = 5, byrow = T)
 datasets2process
 
 # input regulatory sites --------------------------------------------------
@@ -24,34 +24,21 @@ disease_sites <- fread(input = "./Ding_Lab/Projects_Current/CPTAC/pan3can_shared
 disease_sites <- disease_sites %>%
   mutate(SUB_MOD_RSD = str_split_fixed(string = MOD_RSD, pattern = "-", n = 2)[,1]) %>%
   mutate(phosphosite = paste0(GENE, "_", SUB_MOD_RSD)) %>%
-  filter(DISEASE %in% c("endometrial cancer"))
+  filter(grepl(x = DISEASE, pattern = "ovarian"))
 
 
 # input cancer driver kinases ---------------------------------------------
 kinase_driver_table <- readxl::read_xlsx(path = "./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Gene_Lists/Fleuren2016/nrc.2015.18-s1.xlsx", sheet = "Suppl Table 1 - Kinase list")
 kinases_genomics_altered <- kinase_driver_table %>%
-  filter(grepl(x = `Mutational drivers tumor typed`, pattern = "UCEC") | grepl(x = `CNA cancer drivers tumor typed`, pattern = "UCEC") | grepl(x = `Oncogenic fusion drivers tumor typed`, pattern = "UCEC")) %>%
+  filter(grepl(x = `Mutational drivers tumor typed`, pattern = "OV") | grepl(x = `CNA cancer drivers tumor typed`, pattern = "OV") | grepl(x = `Oncogenic fusion drivers tumor typed`, pattern = "OV")) %>%
   select(`Gene symbol`)
 kinases_genomics_altered <- unlist(kinases_genomics_altered$`Gene symbol`)
 kinases_genomics_altered
-# FLT1, KDR from VEGF ligand-receptor interactions pathway
-# PDK2 from Pyruvate metabolism and Citric Acid (TCA) cycle pathway
-# PRKAB1/AMPK from Fatty Acyl-CoA Biosynthesis
-# PRKAA2 from Energy dependent regulation of mTOR by LKB1-AMPK pathway
-# PRKAA1 from Glycolysis pathay
-# TYK2 from Cytokine Signaling in Immune system pathway
-kinases_manually_curated <- c("MTOR", "FLT1", "KDR", "FLT4")
+kinases_manually_curated <- NULL
 
-# input UCEC important genes ---------------------------------------------
+# input ccRCC important genes ---------------------------------------------
 # genes2test <- unique(c(kinases_genomics_altered, kinases_manually_curated))
-genes2test <- c("FGFR1", "FGFR2", "FGFR3", "FLT3",
-                "EGFR","ERBB2", "ERBB3", 
-                "JAK1", "JAK2", 
-                "MAP3K4",
-                "AKT1", "MTOR",
-                "ATM", "CHEK2", "ATR",
-                "TGFBR2")
-
+genes2test <- c("BRAF", "AKT1", "AKT2", "ATM", "CDK12", "ATR")
 genes2test
 
 # loop -----------------------------------------------------------------
@@ -68,9 +55,8 @@ for (i in 1:nrow(datasets2process)) {
   pro_data <- loadParseProteomicsData(cancer = cancer, expression_type = "PRO", sample_type = sample_type, pipeline_type = pipeline_type, norm_type = norm_type)
   pro_data <- data.frame(pro_data)
   
-  pho_rsd_split <- data.frame(SUBSTRATE = pho_data$Gene, SUB_MOD_RSD = pho_data$Phosphosite)
-  colnames(pho_rsd_split) <- c("SUBSTRATE", "SUB_MOD_RSD")
-  
+  pho_rsd_split <- data.frame(SUBSTRATE = pho_data$Gene, SUB_MOD_RSD = pho_data$Phosphosite, Peptide_ID = pho_data$Peptide_ID)
+
   if (any(is.na(pho_rsd_split$SUBSTRATE) | is.na(pho_rsd_split$SUB_MOD_RSD))) {
     stop("pho_rsd_split weird")
   }
@@ -81,11 +67,15 @@ for (i in 1:nrow(datasets2process)) {
   
   # make table for pairs to test --------------------------------------------
   pairs2test_tab <- load_es_pro_with_predicted_table()
-  pairs2test_tab <- merge(pairs2test_tab, pho_rsd_split, by.x = c("SUB_GENE"), by.y = c("SUBSTRATE"))
+  pairs2test_tab <- merge(pairs2test_tab, 
+                          pho_rsd_split %>%
+                            mutate(SUB_Peptide_ID = Peptide_ID) %>%
+                            select(SUBSTRATE, SUB_MOD_RSD, SUB_Peptide_ID), by.x = c("SUB_GENE"), by.y = c("SUBSTRATE"))
   pairs2test_tab <- merge(pairs2test_tab, 
                           pho_rsd_split %>%
                             mutate(ENZ_MOD_RSD = SUB_MOD_RSD) %>%
-                            select(SUBSTRATE, ENZ_MOD_RSD), 
+                            mutate(ENZ_Peptide_ID = Peptide_ID) %>%
+                            select(SUBSTRATE, ENZ_MOD_RSD, ENZ_Peptide_ID), 
                           by.x = c("GENE"), by.y = c("SUBSTRATE"))
   pairs2test_tab <- pairs2test_tab %>%
     mutate(ENZ_phosphosite = paste0(GENE, "_", ENZ_MOD_RSD)) %>%
@@ -117,15 +107,19 @@ for (i in 1:nrow(datasets2process)) {
   sd_pro_kin <- vec_num;sd_pro_sub <- vec_num;sd_pho_kin <- vec_num; sd_pho_sub <- vec_num;
   
   for (j in 1:npairs2test){
-    print(paste0(j, "/", npairs2test))
     enzyme <- pairs2test_tab[j, "GENE"]
     enz_mod_rsd <- pairs2test_tab[j, "ENZ_MOD_RSD"]
+    enz_peptide_id <- pairs2test_tab[j, "ENZ_Peptide_ID"]
+    
     substrate <- pairs2test_tab[j, "SUB_GENE"]
     sub_mod_rsd <- pairs2test_tab[j, "SUB_MOD_RSD"]
+    sub_peptide_id <- pairs2test_tab[j, "SUB_Peptide_ID"]
     
-    pho_sub <- pho_data[pho_data$Gene == substrate & pho_data$Phosphosite == sub_mod_rsd, samples]
-    pho_enz <- pho_data[pho_data$Gene == enzyme & pho_data$Phosphosite == enz_mod_rsd, samples]
-    pro_sub <- pro_data[pro_data$Gene == substrate,samples]
+    print(paste0(j, "/", nrow(npairs2test)))
+    
+    pho_sub <- pho_data[pho_data$Gene == substrate & pho_data$Phosphosite == sub_mod_rsd & pho_data$Peptide_ID == sub_peptide_id, samples]
+    pho_enz <- pho_data[pho_data$Gene == enzyme & pho_data$Phosphosite == enz_mod_rsd & pho_data$Peptide_ID == enz_peptide_id, samples]
+    pro_sub <- pro_data[pro_data$Gene == substrate, samples]
     
     #prepare regression data for model2
     df4regression <- data.frame(t(rbind(pho_sub,pro_sub,pho_enz)))
@@ -143,6 +137,8 @@ for (i in 1:nrow(datasets2process)) {
       sd_pro_sub[j] <- sd(data_complete$pro_sub)
       sd_pho_kin[j] <- sd(data_complete$pho_enz)
       sd_pho_sub[j] <- sd(data_complete$pho_sub)
+      Transcript_sub[j] <- sub_peptide_id
+      Transcript_enz[j] <- enz_peptide_id
     }
   }
   table_trans <- data.frame(pairs2test_tab,
@@ -177,6 +173,5 @@ for (i in 1:nrow(datasets2process)) {
   
   ## write out
   tn = paste0(makeOutDir(), "regression_", cptac_phase , "_", cancer, "_", sample_type, "_", pipeline_type, "_", norm_type, "_nonNA20", ".", format(Sys.Date(), "%Y%m%d") , ".v", version_num, ".txt")
-  # tn = paste0(makeOutDir(), "regression_", cptac_phase , "_", cancer, "_", sample_type, "_", pipeline_type, "_", norm_type, "_nonNA20.txt")
   write.table(table_trans_filtered, file=tn, quote=F, sep = '\t', row.names = FALSE)
 }

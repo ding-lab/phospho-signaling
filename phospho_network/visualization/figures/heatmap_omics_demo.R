@@ -62,14 +62,136 @@ breaks = seq(-(cap),cap, by=0.2)
 color.palette <- colorRampPalette(rev(brewer.pal(10, "RdBu")))(length(breaks))
 
 
-# check SMG phosphosites in CCRCC -----------------------------------------
-genes2test <- unique(c(SMGs[["CCRCC"]], driver_genes$Gene[driver_genes$Cancer == "KIRC"], 
-                       "HIF1A", "EPAS1", 
-                       "FLT1", "KDR", "FLT4", "MET", "PDGFR"))
-pho_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PHO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "MD_MAD")
-pho_smg_tab <- pho_tab %>%
-  filter(Gene %in% genes2test)
-unique(pho_smg_tab$Gene)
+# AKT1 signaling ----------------------------------------------------------
+cancer_tmp <- "BRCA"
+mut_genes <- c(SMGs[[cancer_tmp]])
+cna_genes <- c("")
+rna_genes <- c("")
+pro_genes <- c("")
+phog_genes <- c("")
+pho_genes_uniq <- c( "AKT1",  "GSK3B")
+pho_genes <- pho_genes_uniq
+rsds <- c("S129", "S9")
+row_order <- c(paste0(pho_genes, "_", rsds))
+fig_width <- 20
+fig_height <- 5
+nonNA_cutoff <- 0
+version_tmp <- 1
+if_cluster_row_tmp <- F
+if_cluster_col_tmp <- F
+
+# MTOR signaling ----------------------------------------------------------
+# mut_genes <- c(SMGs[["CCRCC"]], "MET")
+# cna_genes <- c("")
+# rna_genes <- c("")
+# pro_genes <- c("")
+# phog_genes <- c("")
+# pho_genes_uniq <- c( "MTOR",  "AKT1S1")
+# pho_genes <- pho_genes_uniq
+# rsds <- c("S2481", "S183")
+# row_order <- c(paste0(pho_genes, "_", rsds))
+# fig_width <- 20
+# fig_height <- 3
+# nonNA_cutoff <- 0
+# version_tmp <- 1
+# if_cluster_row_tmp <- T
+# if_cluster_col_tmp <- T
+# 
+# mut_genes <- c(SMGs[["CCRCC"]], "MET")
+# cna_genes <- c("")
+# rna_genes <- c("")
+# pro_genes <- c("")
+# phog_genes <- c("")
+# pho_genes_uniq <- c( "MTOR",  "MAF1")
+# pho_genes <- pho_genes_uniq
+# rsds <- c("S2481", "S75")
+# row_order <- c(paste0(pho_genes, "_", rsds))
+# fig_width <- 20
+# fig_height <- 3
+# nonNA_cutoff <- 0
+# version_tmp <- 1
+# if_cluster_row_tmp <- T
+# if_cluster_col_tmp <- T
+# 
+# mut_genes <- c(SMGs[["CCRCC"]], "MET")
+# cna_genes <- c("")
+# rna_genes <- c("")
+# pro_genes <- c("")
+# phog_genes <- c("")
+# pho_genes_uniq <- c( "MTOR",  "MAF1")
+# pho_genes <- pho_genes_uniq
+# rsds <- c("S2481", "T64")
+# row_order <- c(paste0(pho_genes, "_", rsds))
+# fig_width <- 20
+# fig_height <- 3
+# nonNA_cutoff <- 0
+# version_tmp <- 1
+# if_cluster_row_tmp <- T
+# if_cluster_col_tmp <- T
+# 
+# mut_genes <- c(SMGs[["CCRCC"]], "MET")
+# cna_genes <- c("")
+# rna_genes <- c("")
+# pro_genes <- c("")
+# phog_genes <- c("")
+# pho_genes_uniq <- c( "MTOR",  "RPTOR")
+# pho_genes <- pho_genes_uniq
+# rsds <- c("S2481", "S863")
+# row_order <- c(paste0(pho_genes, "_", rsds))
+# fig_width <- 20
+# fig_height <- 3
+# nonNA_cutoff <- 0
+# version_tmp <- 1
+# if_cluster_row_tmp <- T
+# if_cluster_col_tmp <- T
+# 
+# mut_genes <- c(SMGs[["CCRCC"]], "MET")
+# cna_genes <- c("")
+# rna_genes <- c("")
+# pro_genes <- c("")
+# phog_genes <- c("")
+# pho_genes_uniq <- c( "MTOR",  "UVRAG")
+# pho_genes <- pho_genes_uniq
+# rsds <- c("S2481", "S571")
+# row_order <- c(paste0(pho_genes, "_", rsds))
+# fig_width <- 20
+# fig_height <- 3
+# nonNA_cutoff <- 0
+# version_tmp <- 1
+# if_cluster_row_tmp <- T
+# if_cluster_col_tmp <- T
+# 
+# mut_genes <- c(SMGs[["CCRCC"]], "MET")
+# cna_genes <- c("")
+# rna_genes <- c("")
+# pro_genes <- c("")
+# phog_genes <- c("")
+# pho_genes_uniq <- c( "MTOR",  "ZNRF2")
+# pho_genes <- pho_genes_uniq
+# rsds <- c("S2481", "S145")
+# row_order <- c(paste0(pho_genes, "_", rsds))
+# fig_width <- 20
+# fig_height <- 3
+# nonNA_cutoff <- 0
+# version_tmp <- 1
+# if_cluster_row_tmp <- T
+# if_cluster_col_tmp <- T
+# 
+# mut_genes <- c(SMGs[["CCRCC"]], "MET")
+# cna_genes <- c("")
+# rna_genes <- c("")
+# pro_genes <- c("")
+# phog_genes <- c("")
+# pho_genes_uniq <- c( "MTOR",  "UVRAG",  "ZNRF2")
+# pho_genes <- pho_genes_uniq
+# rsds <- c("S2481", "S571", "S145")
+# row_order <- c(paste0(pho_genes, "_", rsds))
+# fig_width <- 20
+# fig_height <- 3
+# nonNA_cutoff <- 0
+# version_tmp <- 1
+# if_cluster_row_tmp <- T
+# if_cluster_col_tmp <- T
 
 # plot VHL phosphosites for CCRCC-----------------------------------------------
 # mut_genes <- SMGs[["CCRCC"]]
@@ -343,22 +465,22 @@ unique(pho_smg_tab$Gene)
 # if_cluster_row_tmp <- T
 # if_cluster_col_tmp <- T
 
-mut_genes <- c(SMGs[["CCRCC"]], "MET")
-cna_genes <- c("MET", "FLT4")
-rna_genes <- c("CTNND1")
-pro_genes <- c("MET", "CTNND1", "CTNNB1")
-phog_genes <- c("")
-pho_genes_uniq <- c( "MET",  "CTNND1", "CTNNB1")
-pho_genes <- pho_genes_uniq
-rsds <- c("T977", "Y228", "Y716")
-row_order <- c("MET_PRO", "CTNND1_PRO", "CTNNB1_PRO",
-               paste0(pho_genes, "_", rsds))
-fig_width <- 20
-fig_height <- 5
-nonNA_cutoff <- 20
-version_tmp <- 3
-if_cluster_row_tmp <- T
-if_cluster_col_tmp <- T
+# mut_genes <- c(SMGs[["CCRCC"]], "MET")
+# cna_genes <- c("MET", "FLT4")
+# rna_genes <- c("CTNND1")
+# pro_genes <- c("MET", "CTNND1", "CTNNB1")
+# phog_genes <- c("")
+# pho_genes_uniq <- c( "MET",  "CTNND1", "CTNNB1")
+# pho_genes <- pho_genes_uniq
+# rsds <- c("T977", "Y228", "Y716")
+# row_order <- c("MET_PRO", "CTNND1_PRO", "CTNNB1_PRO",
+#                paste0(pho_genes, "_", rsds))
+# fig_width <- 20
+# fig_height <- 5
+# nonNA_cutoff <- 20
+# version_tmp <- 3
+# if_cluster_row_tmp <- T
+# if_cluster_col_tmp <- T
 
 # plot MET - EGFR  ---------------------------------------------------
 # mut_genes <- c(SMGs[["CCRCC"]], "MET")
@@ -618,7 +740,7 @@ geneB <- paste(head(unique(c(rna_genes, pro_genes, pho_genes)), 5), collapse = "
 phosphosite <- paste0(rsds, collapse = "_")
 
 # for (cancer in c("UCEC", "BRCA", "CCRCC", "CO", "OV")) {
-for (cancer in c("CCRCC")) {
+for (cancer in cancer_tmp) {
   subdir1 <- paste0(makeOutDir(), cancer, "/")
   dir.create(subdir1)
   
@@ -820,6 +942,7 @@ for (cancer in c("CCRCC")) {
     if (length(row_order) > 1) {
       mat_value <- mat_value[intersect(row_order, rownames(mat_value)),]
       mat_value <- mat_value[rowSums(!is.na(mat_value)) >= nonNA_cutoff, ]
+      mat_value <- mat_value[,colSums(!is.na(mat_value)) >= 1]
     } else {
       mat_value <- matrix(data = mat_value, nrow = 1, dimnames = list(row_order, names(mat_value)))
     }

@@ -2,10 +2,12 @@
 ## test mutation impact on protein/phosphorylation within kinase-substrate pairs or protein complex pairs
 ## using wilcox test
 ## reference: https://data.library.virginia.edu/the-wilcoxon-rank-sum-test/
+## TODO: fr testing phosphorylation data, take into account of protein level, refer to the method of acetylation analysis from UCEC paper
 
 # source ------------------------------------------------------------------
-setwd(dir = "~/Box Sync/")
-source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
+code_top_dir <- "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phospho-signaling_analysis/"
+path2phospho_network_shared <- paste0(code_top_dir, "phospho_network/phospho_network_shared.R")
+source(path2phospho_network_shared)
 
 # set variables -----------------------------------------------------------
 sample_type <- "tumor"
@@ -15,33 +17,29 @@ num_control_thres <- 4
 num_genoalt_thres <- 4
 
 # cancer types to process -------------------------------------------------
-cancers2process <- c("BRCA", "CO", "OV", "UCEC", "CCRCC", "LIHC")
+# cancers2process <- c("BRCA", "CO", "OV", "UCEC", "CCRCC", "LIHC")
+cancers2process <- c("GBM")
 
 # expression data to process ----------------------------------------------
-# affected_exp_type <- "PHO"
-# affected_exp_type <- "PRO"
-# affected_exp_type <- "RNA"
-affected_exp_types2process <- c("RNA", "PRO", "PHO")
+# affected_exp_types2process <- c("RNA", "PRO", "PHO")
+# affected_exp_types2process <- c("PRO", "PHO")
+affected_exp_types2process <- c("PHO")
 
 
 # variant types to test ---------------------------------------------------
 ## include all nonsynonymous mutations or just missense/truncation
-# variant_class <- "truncation"
-# variant_class <- "not_silent"
-# variant_class <- "missense"
-variant_classes2process <- c("truncation", "missense", "not_silent")
-# variant_classes2process <- c("not_silent")
-
+# variant_classes2process <- c("truncation", "missense", "not_silent")
+variant_classes2process <- c("not_silent")
 
 # input protein pair table ------------------------------------------------
-pair_tab_annotated <- fread(input = "./cptac2p/analysis_results/dependencies/tables/compile_protein_pair_table/protein_pair_table.txt", data.table = F)
+pair_tab_annotated <- fread(input = "./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/analysis_results/dependencies/tables/compile_protein_pair_table/protein_pair_table_v2.txt", data.table = F)
 pair_tab <- pair_tab_annotated[pair_tab_annotated$GENE %in% unlist(SMGs), c("GENE", "SUB_GENE")]
 
 # Business  ---------------------------------------------------------------
 for (affected_exp_type in affected_exp_types2process) {
   for (variant_class in variant_classes2process) {
     for (cancer in cancers2process) {
-      fn <- paste0(makeOutDir(resultD = resultD), cancer, "_", variant_class,"_mut_impact_", affected_exp_type , "_tab.txt")
+      fn <- paste0(makeOutDir(), cancer, "_", variant_class,"_mut_impact_", affected_exp_type , "_tab.txt")
       if (!file.exists(fn)) {
         if (cancer %in% c("BRCA", "OV", "CO")) {
           pro_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PRO", sample_type = "tumor", pipeline_type = "CDAP", norm_type = "scaled")
@@ -55,7 +53,11 @@ for (affected_exp_type in affected_exp_types2process) {
         } else if (cancer == "LIHC"){
           pro_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PRO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "MD")
           pho_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PHO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "MD")
+        } else if (cancer == "GBM") {
+          pro_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PRO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "d4")
+          pho_tab <- loadParseProteomicsData(cancer = cancer, expression_type  = "PHO", sample_type = "tumor", pipeline_type = "PGDAC", norm_type = "d6")
         }
+        
         if (affected_exp_type == "PRO") {
           affected_exp_data <- pro_tab
           affected_exp_head <- data.frame(SUBSTRATE = affected_exp_data$Gene)
@@ -186,9 +188,14 @@ for (affected_exp_type in affected_exp_types2process) {
         mut_cnv_tab$SELF <- "trans"
         mut_cnv_tab$SELF[as.vector(mut_cnv_tab$GENE) == as.vector(mut_cnv_tab$SUB_GENE)] <- "cis"
         mut_cnv_tab$genoalt_type <- "mut"
+        mut_cnv_tab$variant_class <- variant_class
+        mut_cnv_tab$affected_exp_type <- affected_exp_type
+        mut_cnv_tab <- mut_cnv_tab[mut_cnv_tab$num >= num_genoalt_thres,]
+        mut_cnv_tab <- merge(mut_cnv_tab, pair_tab_annotated, by = c( "GENE", "SUB_GENE", "pair_pro"), all.x = T)
         
-        ## clean up
-        mut_cnv_tab <- mut_cnv_tab[!(mut_cnv_tab$GENE %in% bad_strings) & !(mut_cnv_tab$SUB_GENE %in% bad_strings),]
+        mut_cnv_tab$fdr <- FDR_by_id_columns(p_vector = mut_cnv_tab$p, id_columns = c("SELF", "cancer", "variant_class", "affected_exp_type", colnames(pair_tab_annotated)[!(colnames(pair_tab_annotated) %in% c("GENE", "SUB_GENE", "pair_pro"))]), df = mut_cnv_tab)
+        mut_cnv_tab$fdr_by_gene <- FDR_by_id_columns(p_vector = mut_cnv_tab$p, id_columns = c("GENE" , "SELF", "cancer", "variant_class", "affected_exp_type", colnames(pair_tab_annotated)[!(colnames(pair_tab_annotated) %in% c("GENE", "SUB_GENE", "pair_pro"))]), df = mut_cnv_tab)
+        
         write.table(x = mut_cnv_tab, file = fn, col.names = T, row.names = F, quote = F, sep = "\t")
         
       }
@@ -196,32 +203,32 @@ for (affected_exp_type in affected_exp_types2process) {
   }
 }
 
-mut_cnv_cans <- NULL
-for (affected_exp_type in c("PRO", "PHO", "RNA")) {
-  for (variant_class in c("truncation", "missense", "not_silent")) {
-    for (cancer in c("BRCA", "OV", "CO", "UCEC", "CCRCC", "LIHC")) {
-      for (genoalt_type in c("mut")) {
-        mut_cnv_can <- fread(input = paste0(ppnD, "genoalt/tables/test_SMG_mut_impact_proteome/", cancer, "_", variant_class, "_mut_impact_", affected_exp_type , "_tab.txt"), data.table = F, sep = "\t")
-        mut_cnv_can$variant_class <- variant_class
-        mut_cnv_can$affected_exp_type <- affected_exp_type
-        mut_cnv_can$cancer <- cancer
-        mut_cnv_cans <- rbind(mut_cnv_cans, mut_cnv_can)
-      }
-    }
-  }
-}
-if (length(unique(mut_cnv_cans$cancer)) < length(cancers2process)) {
-  stop("cancer type not enough!")
-}
-if (length(unique(mut_cnv_cans$variant_class)) < 3) {
-  stop("variant_class not enough!")
-}
-if (length(unique(mut_cnv_cans$affected_exp_type)) < 3) {
-  stop("affected_exp_type not enough!")
-}
-mut_cnv_cans <- mut_cnv_cans[mut_cnv_cans$num >= num_genoalt_thres,]
-mut_cnv_cans <- merge(mut_cnv_cans, pair_tab_annotated, by = c( "GENE", "SUB_GENE"), all.x = T)
-mut_cnv_cans$fdr <- FDR_by_id_columns(p_vector = mut_cnv_cans$p, id_columns = c("SELF", "cancer", "variant_class", "affected_exp_type", colnames(pair_tab_annotated)[!(colnames(pair_tab_annotated) %in% c("GENE", "SUB_GENE", "pair_pro"))]), df = mut_cnv_cans)
-mut_cnv_cans$fdr_by_gene <- FDR_by_id_columns(p_vector = mut_cnv_cans$p, id_columns = c("GENE" , "SELF", "cancer", "variant_class", "affected_exp_type", colnames(pair_tab_annotated)[!(colnames(pair_tab_annotated) %in% c("GENE", "SUB_GENE", "pair_pro"))]), df = mut_cnv_cans)
-write.table(x = mut_cnv_cans, file = paste0(makeOutDir(resultD = resultD), "SMG_mut_impact_tab.txt"), sep = "\t", row.names = F, quote = F)
-
+# mut_cnv_cans <- NULL
+# for (affected_exp_type in c("PRO", "PHO", "RNA")) {
+#   for (variant_class in c("truncation", "missense", "not_silent")) {
+#     for (cancer in c("BRCA", "OV", "CO", "UCEC", "CCRCC", "LIHC")) {
+#       for (genoalt_type in c("mut")) {
+#         mut_cnv_can <- fread(input = paste0(ppnD, "genoalt/tables/test_SMG_mut_impact_proteome/", cancer, "_", variant_class, "_mut_impact_", affected_exp_type , "_tab.txt"), data.table = F, sep = "\t")
+#         mut_cnv_can$variant_class <- variant_class
+#         mut_cnv_can$affected_exp_type <- affected_exp_type
+#         mut_cnv_can$cancer <- cancer
+#         mut_cnv_cans <- rbind(mut_cnv_cans, mut_cnv_can)
+#       }
+#     }
+#   }
+# }
+# if (length(unique(mut_cnv_cans$cancer)) < length(cancers2process)) {
+#   stop("cancer type not enough!")
+# }
+# if (length(unique(mut_cnv_cans$variant_class)) < 3) {
+#   stop("variant_class not enough!")
+# }
+# if (length(unique(mut_cnv_cans$affected_exp_type)) < 3) {
+#   stop("affected_exp_type not enough!")
+# }
+# mut_cnv_cans <- mut_cnv_cans[mut_cnv_cans$num >= num_genoalt_thres,]
+# mut_cnv_cans <- merge(mut_cnv_cans, pair_tab_annotated, by = c( "GENE", "SUB_GENE"), all.x = T)
+# mut_cnv_cans$fdr <- FDR_by_id_columns(p_vector = mut_cnv_cans$p, id_columns = c("SELF", "cancer", "variant_class", "affected_exp_type", colnames(pair_tab_annotated)[!(colnames(pair_tab_annotated) %in% c("GENE", "SUB_GENE", "pair_pro"))]), df = mut_cnv_cans)
+# mut_cnv_cans$fdr_by_gene <- FDR_by_id_columns(p_vector = mut_cnv_cans$p, id_columns = c("GENE" , "SELF", "cancer", "variant_class", "affected_exp_type", colnames(pair_tab_annotated)[!(colnames(pair_tab_annotated) %in% c("GENE", "SUB_GENE", "pair_pro"))]), df = mut_cnv_cans)
+# write.table(x = mut_cnv_cans, file = paste0(makeOutDir(), "SMG_mut_impact_tab.txt"), sep = "\t", row.names = F, quote = F)
+# 

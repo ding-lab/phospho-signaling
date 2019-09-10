@@ -1,7 +1,7 @@
 # Yige Wu @ WashU 2018 Jan
 ## shared parameters and functions for cptac2p_analysis
 
-#  source -----------------------------------------------------------------
+#  library -----------------------------------------------------------------
 library(data.table)
 library(readxl)
 
@@ -85,6 +85,33 @@ SMGs[["UCEC"]] <- c("FLNA",
 SMGs[["CCRCC"]] <- c("VHL", "PBRM1", "SETD2", "KDM5C", "PTEN", "BAP1", "MTOR", "TP53")
 SMGs[["LIHC"]] <- c("TP53", "AXIN1", "RB1", "CTNNB1", "ARID1A", "ARID2", "BAP1", "NFE2L2", "KEAP1", "ALB", "APOB")
 SMGs[["LUAD"]] <- c("KRAS", "EGFR", "BRAF", "ROS1", "ALK", "RET", "MAP2K1", "HRAS", "NRAS", "MET", "ERBB2", "RIT1", "NF1")
+SMGs[["GBM"]] <- c(
+  # RTK genes
+  'EGFR', # 'ERBB2', 'ERBB3', 'ERBB4',
+  'PDGFRA', 'PDGFRB',
+  'MET',
+  # 'FGFR1', 'FGFR2', 'FGFR3',
+  # PI3K genes
+  'PIK3CA', 'PIK3R1',
+  # 'PIK3CG', 'PIK3C2G',
+  # 'PIK3CB', 'PIK3C2B', 'PIK3C2A', 'PIK3R2',
+  'PTEN',
+  # MAPK genes
+  'NF1',
+  'BRAF',
+  # TP53 genes
+  'TP53',
+  'MDM2', 'MDM4', 'MDM1', 'PPM1D',
+  'CDKN2A',
+  # RB1 genes
+  'RB1',
+  'CDKN2C', 'CDKN1A', 'CDKN2B',
+  'CDK4',
+  'CDK6',
+  # Chromosome modification genes
+  'IDH1', 'IDH2',
+  'ATRX', 'SMARCAL1'
+)
 
 ## significant SCNA
 # CNAs <- list()
@@ -109,7 +136,7 @@ SMGs[["LUAD"]] <- c("KRAS", "EGFR", "BRAF", "ROS1", "ALK", "RET", "MAP2K1", "HRA
 
 
 # oncogenes and TSGs ------------------------------------------------------
-driver_genes <- read_excel("./Ding_Lab/Projects_Current/TCGA_data/gene_lists/mmc1.xlsx", 
+driver_genes <- read_excel("./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Gene_Lists/mmc1.xlsx", 
                            sheet = "Table S1", skip = 3)
 driver_genes <- data.frame(driver_genes)
 oncogenes <- driver_genes$Gene[grepl(x = driver_genes$Tumor.suppressor.or.oncogene.prediction..by.20.20.., pattern = "oncogene")]
@@ -224,6 +251,8 @@ loadMaf <- function(cancer, maf_files) {
     maf <- fread(input = paste0(dir2cptac_pgdac, "ccRCC_discovery_manuscript/ccRCC_expression_matrices/Somatic_Variants/ccrcc.somatic.consensus.gdc.umichigan.wu.112918.maf"), data.table = F, fill=TRUE) 
   } else if (cancer  == "LIHC") {
     maf <- fread(input = paste0(resultD, "preprocess_files/tables/parse_China_Liver/LIHC_AllSamples.filtered.mutect2.partID.maf"), data.table = F, fill=TRUE) 
+  } else if (cancer == "GBM") {
+    maf <- fread(input = paste0(dir2cptac_pgdac, "GBM/v1.0.20190802/tindaisy_all_cases_filtered.v1.0.20190802.maf"), data.table = F)
   }
   maf <- data.frame(maf)
   print(paste0("MAF has ", nrow(maf), " lines\n"))
@@ -424,9 +453,13 @@ loadParseProteomicsData <- function(cancer, expression_type, sample_type, pipeli
       }
     } else if (cancer == "LUAD") {
       dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze" , "/")
+    } else if (cancer == "UCEC") {
+      dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze", "_v2" , "/")
+    } else if (cancer == "GBM") {
+      dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze", "_v1" , "/")
     } else {
-      dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze", ifelse(cancer == "UCEC", "_v2", "") , "/")
-    } 
+      dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze", "" , "/")
+    }
   } else if (pipeline_type == "CDAP") {
     dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_CDAP_data/")
   }
@@ -478,7 +511,7 @@ loadGeneList = function(gene_type, cancer, is.soft.limit) {
     RTK_file = read.table(paste(dir2cptac2_retrospective,"reference_files/RTKs_list.txt",sep = ""))
     genelist <- as.vector(t(RTK_file))
   }
-  driver_table <- read_excel("./Ding_Lab/Projects_Current/TCGA_data/gene_lists/mmc1.xlsx", 
+  driver_table <- read_excel("./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Gene_Lists/mmc1.xlsx", 
                                 sheet = "Table S1", skip = 3)
   
   driver_table <- data.frame(driver_table)

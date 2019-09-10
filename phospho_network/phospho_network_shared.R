@@ -283,6 +283,8 @@ load_omnipath <- function() {
   return(k_s_table)
 }
 
+omnipath_tab_new <- fread(input = "./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Phospho_databases/OmniPath/July_25_2019/ptms.txt", data.table = F)
+
 load_es_pro_table <- function(protein) {
   omnipath_tab <- load_omnipath()
   omnipath_tab_new <- fread(input = "./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Phospho_databases/OmniPath/July_25_2019/ptms.txt", data.table = F)

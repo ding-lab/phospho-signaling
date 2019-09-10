@@ -7,8 +7,11 @@ code_top_dir <- "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phosph
 path2phospho_network_shared <- paste0(code_top_dir, "phospho_network/phospho_network_shared.R")
 source(path2phospho_network_shared)
 
+# input version number ----------------------------------------------------
+version_num <- 1
+
 # set variables -----------------------------------------------------------
-least_samples <- 5# least number of samples with complete data for each model
+least_samples <- 20# least number of samples with complete data for each model
 datasets2process <- matrix(data = c("CCRCC", "PGDAC", "tumor", "MD_MAD", "cptac3"), ncol = 5, byrow = T)
 datasets2process
 
@@ -37,10 +40,13 @@ kinases_genomics_altered
 # PRKAA2 from Energy dependent regulation of mTOR by LKB1-AMPK pathway
 # PRKAA1 from Glycolysis pathay
 # TYK2 from Cytokine Signaling in Immune system pathway
-kinases_manually_curated <- c("TYK2", "FLT1", "KDR", "FLT4", "PDK2", "PRKAB1", "PRKAA2", "PRKAA1")
+# kinases_manually_curated <- c("TYK2", "FLT1", "KDR", "FLT4", "PDK2", "PRKAB1", "PRKAA2", "PRKAA1")
 
 # input ccRCC important genes ---------------------------------------------
-genes2test <- unique(c(kinases_genomics_altered, kinases_manually_curated))
+# genes2test <- unique(c(kinases_genomics_altered, kinases_manually_curated))
+genes2test <- c("PDGFRA", "PDGFRB", "FGFR1", "AXL", "MET", "FLT1", "KDR", "FLT4", "FLT3",
+                "PRKAB1", "PRKAA1", "PRKAA2", 
+                "MTOR", "AKT1")
 genes2test
 
 # loop -----------------------------------------------------------------
@@ -106,6 +112,8 @@ for (i in 1:nrow(datasets2process)) {
   sd_pro_kin <- vec_num;sd_pro_sub <- vec_num;sd_pho_kin <- vec_num; sd_pho_sub <- vec_num;
   
   for (j in 1:npairs2test){
+    print(paste0(j, "/", npairs2test))
+    
     enzyme <- pairs2test_tab[j, "GENE"]
     enz_mod_rsd <- pairs2test_tab[j, "ENZ_MOD_RSD"]
     substrate <- pairs2test_tab[j, "SUB_GENE"]
@@ -164,6 +172,6 @@ for (i in 1:nrow(datasets2process)) {
   table_trans_filtered$SUB_phosphosite.is_disease_related <- (table_trans_filtered$SUB_phosphosite %in% disease_sites$phosphosite)
   
   ## write out
-  tn = paste0(makeOutDir(), "regression_", cptac_phase , "_", cancer, "_", sample_type, "_", pipeline_type, "_", norm_type, "_nonNA20.txt")
+  tn = paste0(makeOutDir(), "regression_", cptac_phase , "_", cancer, "_", sample_type, "_", pipeline_type, "_", norm_type, "_nonNA20", ".", format(Sys.Date(), "%Y%m%d") , ".v", version_num, ".txt")
   write.table(table_trans_filtered, file=tn, quote=F, sep = '\t', row.names = FALSE)
 }
