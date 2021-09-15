@@ -2,28 +2,18 @@
 # load TCGA pathway templates
 # ref: https://ars.els-cdn.com/content/image/1-s2.0-S0092867418303593-mmc3.xlsx
 
-# source ------------------------------------------------------------------
-baseD = "~/Box/"
-setwd(baseD)
-
-code_top_dir <- "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phospho-signaling_analysis/"
-path2cptac_shared <- paste0(code_top_dir, "cptac2p_analysis_shared.R")
-source(path2cptac_shared)
-
-
 # set pathway names -------------------------------------------------------
 pathway_names <- c("Cell Cycle", "HIPPO", "MYC", "NOTCH", "NRF2", "PI3K", "TGF-Beta", "RTK RAS", "TP53", "WNT")
-
 
 # process TCGA oncogenic pathways -----------------------------------------
 tcga_pathways <- list()
 gene_count <- 0
 for (pathway_name in pathway_names) {
   if (pathway_name == "Cell Cycle") {
-    curated_gene_tab <- read_excel("./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Gene_Lists/TCGA_pathways_templates.xlsx", 
+    curated_gene_tab <- read_excel("~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/Resources/Knowledge/Gene_Lists/TCGA_pathways_templates.xlsx", 
                                    sheet = pathway_name, skip = 2)
   } else {
-    curated_gene_tab <- read_excel("./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Gene_Lists/TCGA_pathways_templates.xlsx", 
+    curated_gene_tab <- read_excel("~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/Resources/Knowledge/Gene_Lists/TCGA_pathways_templates.xlsx", 
                                    sheet = pathway_name)
   }
   curated_gene_tab <- data.frame(curated_gene_tab)
@@ -55,7 +45,7 @@ pathway_names4kegg[pathway_names4kegg == "RTK RAS"] <- "RAS"
 pathway_names4kegg[pathway_names4kegg == "TP53"] <- "p53"
 pathway_names4kegg[pathway_names4kegg == "MYC"] <- "XXXX"
 
-load(paste0(dir2phospho_signaling, "resources/Gene_Lists/2015-08-01_Gene_Set.RData"))
+load(paste0(dir_base, "Resources/Knowledge/Gene_Lists/2015-08-01_Gene_Set.RData"))
 all_keggs <- names(KEGG)
 keggs <- NULL
 key_names <- NULL

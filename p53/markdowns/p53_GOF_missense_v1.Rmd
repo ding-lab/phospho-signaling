@@ -21,6 +21,7 @@ cancers2proces <- c("BRCA", "OV", "CO", "UCEC", "CCRCC", "LIHC")
 
 ```{r input-mut_impact_tab}
 mut_impact_tab <- fread(input = "./cptac2p/analysis_results/p53/tables/test_TP53_missense_impact_TF_downstream/TP53_missense_mut_impact_tab.txt", data.table = F)
+mut_impact_tab <- fread(input = "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/analysis_results/p53/tables/test_TP53_missense_impact_TF_downstream/TP53_missense_mut_impact_tab.txt", data.table = F)
 
 pair_tab_TF <- fread(input = "./cptac2p/analysis_results/p53/tables/test_TP53_missense_impact_TF_downstream/pair_tab_w.TFs.txt", data.table = F)
 pair_tab_TF <- pair_tab_TF %>%

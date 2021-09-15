@@ -114,29 +114,13 @@ SMGs[["GBM"]] <- c(
 )
 
 ## significant SCNA
-# CNAs <- list()
-# cancer_synonyms <- c("BRCA", "OV", "CRC", "All_cancer", "UCEC")
-# names(cancer_synonyms) <- c(cancers_sort, "PANCAN", "UCEC")
-# for (cancer in names(cancer_synonyms)) {
-#   CNAs[[cancer]] <- list()
-#   for (cna_type in c("amplification", "deletion")) {
-#     if (cancer == "PANCAN") {
-#       cna_tab <- readxl::read_xlsx(path = "./Ding_Lab/Projects_Current/Gene Lists/copy_number_alteration/ng.2760-S5.xlsx", 
-#                                    sheet = paste0(substr(x = cna_type, start = 1, stop = 3), "_genes.", cancer_synonyms[cancer]))
-#     } else {
-#       cna_tab <- readxl::read_xlsx(path = "./Ding_Lab/Projects_Current/Gene Lists/copy_number_alteration/ng.2760-S5.xlsx", 
-#                                    sheet = paste0(substr(x = cna_type, start = 1, stop = 3), "_genes.annotated.", cancer_synonyms[cancer], ".txt"))
-#     }
-#     cna_tab.m <- unlist(cna_tab[4:nrow(cna_tab), 2:ncol(cna_tab)], use.names = F)
-#     cna_tab.m <- cna_tab.m[!is.na(cna_tab.m) & cna_tab.m != "NA"]
-#     cna_tab.m <- str_split_fixed(string = cna_tab.m, pattern = "\\-", 2)[,1]
-#     CNAs[[cancer]][[cna_type]] <- cna_tab.m
-#   }
-# }
+CNGs <- list()
+CNGs[["GBM"]] <- c("EGFR", "PRDM2", "MDM4", "AKT3", "MYCN", "SOX2", "FGFR3", "PDGFRA", "CDK6", "MET", "MYC", "CCND2", "CDK4", "MDM2", "IRS2", "AKT1", "HYDIN", "GRB2", "CCNE1",
+                   "CDKN2C", "LSAMP", "QKI", "CDKN2A", "CDKN2B", "PTEN", "RB1", "NPAS3", "TP53", "NF1")
 
 
 # oncogenes and TSGs ------------------------------------------------------
-driver_genes <- read_excel("./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Gene_Lists/mmc1.xlsx", 
+driver_genes <- read_excel("~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/Resources/Knowledge/Gene_Lists/mmc1.xlsx", 
                            sheet = "Table S1", skip = 3)
 driver_genes <- data.frame(driver_genes)
 oncogenes <- driver_genes$Gene[grepl(x = driver_genes$Tumor.suppressor.or.oncogene.prediction..by.20.20.., pattern = "oncogene")]
@@ -252,7 +236,7 @@ loadMaf <- function(cancer, maf_files) {
   } else if (cancer  == "LIHC") {
     maf <- fread(input = paste0(resultD, "preprocess_files/tables/parse_China_Liver/LIHC_AllSamples.filtered.mutect2.partID.maf"), data.table = F, fill=TRUE) 
   } else if (cancer == "GBM") {
-    maf <- fread(input = paste0(dir2cptac_pgdac, "GBM/v1.0.20190802/tindaisy_all_cases_filtered.v1.0.20190802.maf"), data.table = F)
+    maf <- fread(input = paste0("./Ding_Lab/Projects_Current/CPTAC3-GBM/Data_Freeze/cptac3_gbm_data_freeze_v2.1.20190927/somatic_mutation/tindaisy/tindaisy_all_cases_filtered.v2.1.20190927.maf.gz"), data.table = F)
   }
   maf <- data.frame(maf)
   print(paste0("MAF has ", nrow(maf), " lines\n"))
@@ -366,8 +350,6 @@ generate_somatic_mutation_matrix <- function(pair_tab, maf) {
 }
 
 # functions relating to CNA -----------------------------------------------
-amp_thres_cans <- c(log2(1.1), log2(1.1), log2(1.1), 0.2, 0.1, 0.8); names(amp_thres_cans) <- c(cancers_sort, "UCEC", "CCRCC", "LIHC")
-del_thres_cans <- c(log2(0.9), log2(0.9), log2(0.9), -0.2, -0.1, -0.8); names(del_thres_cans) <- c(cancers_sort, "UCEC", "CCRCC", "LIHC")
 
 loadCNA <- function(cancer) {
   ## input CNA values
@@ -381,8 +363,14 @@ loadCNA <- function(cancer) {
   if (cancer %in% c("LIHC")) {
     cna <- fread(input = paste0(resultD, "preprocess_files/tables/parse_", "China_Liver", "/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
   }
+  if (cancer == "GBM") {
+    cna <- fread(input = paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze_v2_0/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
+  }
   return(cna)
 }
+
+amp_thres_cans <- c(log2(1.1), log2(1.1), log2(1.1), 0.2, 0.1, 0.8, 0.2); names(amp_thres_cans) <- c(cancers_sort, "UCEC", "CCRCC", "LIHC", "GBM")
+del_thres_cans <- c(log2(0.9), log2(0.9), log2(0.9), -0.2, -0.1, -0.8, -0.2); names(del_thres_cans) <- c(cancers_sort, "UCEC", "CCRCC", "LIHC", "GBM")
 
 loadCNAstatus <- function(cancer) {
   ## input CNA values
@@ -396,11 +384,14 @@ loadCNAstatus <- function(cancer) {
   if (cancer %in% c("LIHC")) {
     cna <- fread(input = paste0(resultD, "preprocess_files/tables/parse_", "China_Liver", "/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
   }
+  if (cancer == "GBM") {
+    cna <- fread(input = paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze_v2_0/somatic_CNA.", cancer, ".partID.txt"), data.table = F)
+  }
   cna_head <- cna$gene
   cna_mat <- cna[, colnames(cna)[!(colnames(cna) %in% "gene")]]
   cna_status <- matrix(data = "neutral", nrow = nrow(cna_mat), ncol = ncol(cna_mat))
-  cna_status[cna_mat > amp_thres_cans[cancer]] <- "amplification"
-  cna_status[cna_mat < del_thres_cans[cancer]] <- "deletion"
+  cna_status[cna_mat > amp_thres_cans[cancer]] <- "gain"
+  cna_status[cna_mat < del_thres_cans[cancer]] <- "loss"
   cna_status <- data.frame(cbind(cna$gene, cna_status))
   colnames(cna_status) <- colnames(cna)
   return(cna_status)
@@ -456,7 +447,7 @@ loadParseProteomicsData <- function(cancer, expression_type, sample_type, pipeli
     } else if (cancer == "UCEC") {
       dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze", "_v2" , "/")
     } else if (cancer == "GBM") {
-      dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze", "_v1" , "/")
+      dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze", "_v2_1" , "/")
     } else {
       dir1 <- paste0(resultD, "preprocess_files/tables/parse_", cancer, "_data_freeze", "" , "/")
     }
@@ -467,51 +458,12 @@ loadParseProteomicsData <- function(cancer, expression_type, sample_type, pipeli
   return(exp_data)
 }
 
-loadProteinNormalizedTumor <- function(cancer) {
-  prefix <- NULL
-  prefix["BRCA"] <- "BRCA_BI"
-  prefix["OV"] <- "OV_PNNL"
-  prefix["CO"] <- "CO_PNNL"
-  prefix["UCEC"] <- "UCEC_PNNL"
-  prefix["CCRCC"] <- "CCRCC_JHU"
-  if (cancer %in% c("BRCA", "OV", "CO")) {
-    pro <- fread(input = paste0("./Ding_Lab/Projects_Current/CPTAC/cptac_shared/", cancer, "/", prefix[cancer], "_PRO_formatted_normalized_noControl.txt"), data.table = F)
-  } else if (cancer == "UCEC") {
-    pro <- fread(input = paste0(resultD, "preprocess_files/tables/parse_UCEC_data_freeze/UCEC_proteomics_V1.cct.formatted.tumor.txt"), data.table = F)
-  } else if (cancer == "CCRCC") {
-    pro <- fread(input = paste0(resultD, "preprocess_files/tables/parse_UCEC_data_freeze/UCEC_proteomics_V1.cct.formatted.tumor.txt"), data.table = F)
-  }
-  return(pro)
-}
-
-loadPhosphoproteinNormalizedTumor <- function(cancer) {
-  prefix <- NULL
-  prefix["BRCA"] <- "BRCA_BI"
-  prefix["OV"] <- "OV_PNNL"
-  prefix["CO"] <- "CO_PNNL"
-  prefix["UCEC"] <- "UCEC_PNNL"
-  prefix["CCRCC"] <- "CCRCC_JHU"
-  pro <- fread(input = paste0("./Ding_Lab/Projects_Current/CPTAC/cptac_shared/", cancer, "/", prefix[cancer], "_collapsed_PHO_formatted_normalized_replicate_averaged_Tumor.txt"), data.table = F)
-  return(pro)
-}
-
-loadPhosphositeNormalizedTumor <- function(cancer) {
-  prefix <- NULL
-  prefix["BRCA"] <- "BRCA_BI"
-  prefix["OV"] <- "OV_PNNL"
-  prefix["CO"] <- "CO_PNNL"
-  prefix["UCEC"] <- "UCEC_PNNL"
-  prefix["CCRCC"] <- "CCRCC_JHU"
-  pro <- fread(input = paste0("./Ding_Lab/Projects_Current/CPTAC/cptac_shared/", cancer, "/", prefix[cancer], "_PHO_formatted_normalized_noControl.txt"), data.table = F)
-  return(pro)
-}
-
 loadGeneList = function(gene_type, cancer, is.soft.limit) {
   if (gene_type == "RTK") {
     RTK_file = read.table(paste(dir2cptac2_retrospective,"reference_files/RTKs_list.txt",sep = ""))
     genelist <- as.vector(t(RTK_file))
   }
-  driver_table <- read_excel("./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Gene_Lists/mmc1.xlsx", 
+  driver_table <- read_excel("~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/Resources/Knowledge/Gene_Lists/mmc1.xlsx", 
                                 sheet = "Table S1", skip = 3)
   
   driver_table <- data.frame(driver_table)
@@ -669,3 +621,4 @@ FDR_by_id_columns <- function(p_vector, id_columns, df) {
   }
   return(fdr_vector)
 }
+

@@ -1,9 +1,8 @@
 # Yige Wu @ WashU 2019 Jan
-## test mutation impact on protein/phosphorylation within kinase-substrate pairs or protein complex pairs
-
 
 # source ------------------------------------------------------------------
 setwd(dir = "~/Box Sync/")
+## you can ignore these 3 lines
 source("./cptac2p_analysis/phospho_network/phospho_network_shared.R")
 source("./cptac2p_analysis/phospho_network/phospho_network_plotting.R")
 source("./cptac2p_analysis/p53/TP53_shared.R")

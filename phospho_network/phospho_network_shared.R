@@ -19,8 +19,7 @@ setwd(baseD)
 # baseD <- paste0(paste0(folders[1:which(folders == "Box Sync")], collapse = "/"), "/")
 # setwd(baseD)
 code_top_dir <- "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phospho-signaling_analysis/"
-path2cptac_shared <- paste0(code_top_dir, "cptac2p_analysis_shared.R")
-source(path2cptac_shared)
+source("./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phospho-signaling_analysis/cptac2p_analysis_shared.R")
 
 # static parameters -------------------------------------------------------
 baseD = "~/Box/"
@@ -283,11 +282,11 @@ load_omnipath <- function() {
   return(k_s_table)
 }
 
-omnipath_tab_new <- fread(input = "./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Phospho_databases/OmniPath/July_25_2019/ptms.txt", data.table = F)
+omnipath_tab_new <- fread(input = "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/Resources/Phospho_databases/OmniPath/July_25_2019/ptms.txt", data.table = F)
 
 load_es_pro_table <- function(protein) {
   omnipath_tab <- load_omnipath()
-  omnipath_tab_new <- fread(input = "./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Phospho_databases/OmniPath/July_25_2019/ptms.txt", data.table = F)
+  omnipath_tab_new <- fread(input = "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/Resources/Phospho_databases/OmniPath/July_25_2019/ptms.txt", data.table = F)
   psp_tab <- load_psp()
   omnipath_tab <- omnipath_tab %>%
     filter(!(Source %in% c("PhosphoNetworks", "NetKIN", "MIMP"))) %>%
@@ -318,7 +317,7 @@ load_es_pro_table <- function(protein) {
 
 load_es_pro_with_predicted_table <- function(protein) {
   omnipath_tab <- load_omnipath()
-  omnipath_tab_new <- fread(input = "./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/resources/Phospho_databases/OmniPath/July_25_2019/ptms.txt", data.table = F)
+  omnipath_tab_new <- fread(input = "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/Resources/Phospho_databases/OmniPath/July_25_2019/ptms.txt", data.table = F)
   psp_tab <- load_psp()
   
   k_s_table <- rbind(omnipath_tab %>%

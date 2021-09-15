@@ -4,14 +4,19 @@
 
 # source ------------------------------------------------------------------
 code_top_dir <- "~/Box/Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phospho-signaling_analysis/"
-path2phospho_network_shared <- paste0(code_top_dir, "phospho_network/phospho_network_shared.R")
-source(path2phospho_network_shared)
-path2aes <- paste0(code_top_dir, "pan3can_aes.R")
+baseD = "~/Box/"
+setwd(baseD)
+
+source("./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phospho-signaling_analysis/phospho_network/phospho_network_shared.R")
+path2aes <- paste0("./Ding_Lab/Projects_Current/PanCan_Phospho-signaling/phospho-signaling_analysis/pan3can_aes.R")
 source(path2aes)
 
 # library -----------------------------------------------------------------
 library(ggplot2)
 library(gtable)
+library(ggrepel)
+library(readxl)
+library(ggpubr)
 
 # static parameters -------------------------------------------------------
 prefix <- NULL
